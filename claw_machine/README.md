@@ -1,7 +1,7 @@
 # Claw Machine Le Renard 🎄 : la pince qui pêche un chèque-cadeau
 
-Scène Blender 100 % procédurale. Une borne d'arcade vert bouteille trône dans un salon
-d'hôtel. La caméra part d'un plan large et zoome vers la pince, qui plonge dans une pile
+Scène Blender 100 % procédurale. Une borne d'arcade vert bouteille est posée dans l'encadrement
+d'une grande porte double d'hôtel, sur un tapis rouge, comme sur la photo de référence. La caméra part d'un plan large et zoome vers la pince, qui plonge dans une pile
 de cadeaux de Noël et en ressort le chèque-cadeau **Le Renard – Hotel & Spa** (recto/verso).
 
 ## Fichiers
@@ -40,16 +40,20 @@ blender -b claw_machine.blend -a       # rend l'animation dans ./render/
   vitrine. Ils sont posés par simulation *rigid body*, puis figés.
 - **Chèque-cadeau** : carte cartonnée à coins arrondis (105 × 159 mm), recto et verso imprimés.
   Le script lit les images du dossier `textures/` (garde-le à côté du script).
-- **Salon d'hôtel** : parquet en chêne, murs à boiseries moulurées (plinthe, cimaise, corniche),
-  deux appliques en laiton à abat-jour, tapis de velours rouge.
-- **Lumière** : caisson lumineux de la borne, lumière de fenêtre douce, tache de soleil chaude
-  sur le tapis, appliques, néons ; AgX contrasté, profondeur de champ calée sur la carte.
+- **Entrée d'hôtel** : façade en noyer sombre (pilastres, chambranle, imposte vitrée), porte double
+  blanche moulurée ouverte (béquilles chromées, charnières laiton, bras de retenue), seuil surélevé,
+  tapis rouge épais qui épouse la marche, sol du hall en pierre, pièce sombre derrière la borne.
+- **Lumière** : soleil rasant à ombres nettes (un auvent invisible ne laisse passer qu'une
+  diagonale de soleil sur le bas du tapis et le battant droit), caisson lumineux de la borne,
+  néons, faible lumière du hall ; AgX contrasté, profondeur de champ calée sur la carte.
+- **Réalisme** : peau d'orange et rugosité variable sur la laque, traces sur le verre et le chrome,
+  bois veiné, fibres du tapis, papier cadeau froissé, halo (bloom) sur les néons au compositing.
 
 ## Animation (24 i/s, 192 images = 8 s)
 
 | Images | Action |
 | --- | --- |
-| 1 → 150 | Zoom caméra : plan large de la borne dans la pièce → plan serré sur la pince |
+| 1 → 150 | Zoom caméra : plan large sur l'entrée (portes, tapis) → plan serré sur la pince |
 | 1 → 48 | Le chariot amène la pince au-dessus du chèque-cadeau, avec balancement |
 | 48 → 58 | Ouverture des griffes |
 | 58 → 86 | Descente dans les cadeaux |
@@ -61,6 +65,7 @@ blender -b claw_machine.blend -a       # rend l'animation dans ./render/
 
 - `MACHINE_GREEN`, `NEON_COLOR`, `NEON_STRENGTH` : couleur de la laque et des néons
 - `MARQUEE_TEXT` : texte de l'enseigne
+- `OPEN_W`, `OPEN_H`, `DOOR_OPEN`, `STEP_H` (section entrée) : ouverture, angle des battants, hauteur du seuil
 - `CAM_WIDE`, `CAM_CLOSE` (section caméra) : départ et arrivée du zoom (position, cible, focale)
 - `SEED` : autre disposition et répartition des cadeaux
 - `N_GIFTS`, `N_BALLS`, `N_JARS`, `N_CANES` : quantité d'objets

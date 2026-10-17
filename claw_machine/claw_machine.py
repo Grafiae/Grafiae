@@ -9,7 +9,9 @@ Script Blender (4.2+ / 5.x) qui construit TOUTE la scène de façon procédurale
   - pile de cadeaux de Noël (papiers à motifs, rubans, nœuds, boules, bougies,
     sucres d'orge), posés par simulation physique (rigid body)
   - un chèque-cadeau recto/verso (textures/cheque_*.png), que la pince va chercher
-  - salon d'hôtel : parquet, boiseries moulurées, appliques en laiton, tapis rouge
+  - entrée d'hôtel façon photo de référence : façade sombre en bois, grande porte double
+    blanche ouverte, imposte, seuil surélevé, tapis rouge, pièce sombre derrière,
+    soleil rasant ; matières réalistes (usure, grain, fibres) et halo sur les néons
   - animation : la caméra part d'un plan large et zoome vers la pince pendant
     qu'elle descend, pince le chèque-cadeau et remonte
 
@@ -44,12 +46,12 @@ FAIRY_LIGHTS = True         # guirlande lumineuse au fond de la vitrine (bokeh c
 FRONT_GLASS = True          # vitre devant la caméra (reflets en plus, rendu plus long)
 
 MACHINE_GREEN = (0.004, 0.05, 0.022)   # laque vert bouteille de la borne
-NEON_COLOR = (0.25, 1.0, 0.45)         # néons des arêtes avant
-NEON_STRENGTH = 7.0
+NEON_COLOR = (0.06, 1.0, 0.3)          # néons des arêtes avant
+NEON_STRENGTH = 14.0
 MARQUEE_TEXT = "LE RENARD"             # enseigne lumineuse du fronton
 BASE_H = 0.88                          # hauteur du meuble bas (sol de la pièce à z = -BASE_H)
 
-RES_X, RES_Y = 1080, 1350   # format 4:5
+RES_X, RES_Y = 1080, 1440   # format 3:4 (comme la référence)
 FPS = 24
 FRAME_END = 192             # 8 s
 SAMPLES = 256               # échantillons Cycles pour le rendu final
@@ -309,6 +311,68 @@ def add_bump(mat, scale=400.0, strength=0.08, detail=8.0):
     nt.links.new(bump.outputs["Normal"], bsdf_of(mat).inputs["Normal"])
 
 
+def add_rough_variation(mat, lo, hi, scale=8.0):
+    """Variation de rugosité (traces, usure, poussière) pour casser l'aspect 'CG'."""
+    nt = mat.node_tree
+    tc = nt.nodes.new("ShaderNodeTexCoord")
+    noise = nt.nodes.new("ShaderNodeTexNoise")
+    noise.inputs["Scale"].default_value = scale
+    noise.inputs["Detail"].default_value = 6.0
+    nt.links.new(tc.outputs["Object"], noise.inputs["Vector"])
+    mr = nt.nodes.new("ShaderNodeMapRange")
+    mr.inputs["From Min"].default_value = 0.35
+    mr.inputs["From Max"].default_value = 0.65
+    mr.inputs["To Min"].default_value = lo
+    mr.inputs["To Max"].default_value = hi
+    nt.links.new(noise.outputs["Fac"], mr.inputs["Value"])
+    nt.links.new(mr.outputs["Result"], bsdf_of(mat).inputs["Roughness"])
+
+
+def add_crinkle(mat, scale=60.0, strength=0.25):
+    """Papier légèrement froissé : relief de Voronoi + bruit fin."""
+    nt = mat.node_tree
+    bsdf = bsdf_of(mat)
+    tc = nt.nodes.new("ShaderNodeTexCoord")
+    vor = nt.nodes.new("ShaderNodeTexVoronoi")
+    vor.feature = 'F1'
+    vor.inputs["Scale"].default_value = scale
+    nt.links.new(tc.outputs["Object"], vor.inputs["Vector"])
+    bump = nt.nodes.new("ShaderNodeBump")
+    bump.inputs["Strength"].default_value = strength
+    bump.inputs["Distance"].default_value = 0.0008
+    nt.links.new(vor.outputs["Distance"], bump.inputs["Height"])
+    prev = bsdf.inputs["Normal"].links[0].from_socket if bsdf.inputs["Normal"].links else None
+    if prev is not None:
+        nt.links.new(prev, bump.inputs["Normal"])
+    nt.links.new(bump.outputs["Normal"], bsdf.inputs["Normal"])
+
+
+def wood_mat(name, c1, c2, rough=0.4, scale=(2.0, 2.0, 30.0), coat=0.3):
+    """Bois veiné procédural (veines étirées le long de Z local)."""
+    mat = new_mat(name, c1, rough, Coat_Weight=coat, Coat_Roughness=0.2)
+    nt = mat.node_tree
+    tc = nt.nodes.new("ShaderNodeTexCoord")
+    mp = nt.nodes.new("ShaderNodeMapping")
+    mp.inputs["Scale"].default_value = scale
+    nt.links.new(tc.outputs["Object"], mp.inputs["Vector"])
+    wave = nt.nodes.new("ShaderNodeTexWave")
+    wave.wave_type = 'RINGS'
+    wave.inputs["Scale"].default_value = 3.0
+    wave.inputs["Distortion"].default_value = 8.0
+    wave.inputs["Detail"].default_value = 4.0
+    nt.links.new(mp.outputs["Vector"], wave.inputs["Vector"])
+    ramp = nt.nodes.new("ShaderNodeValToRGB")
+    ramp.color_ramp.elements[0].color = (*c1, 1)
+    ramp.color_ramp.elements[1].color = (*c2, 1)
+    nt.links.new(wave.outputs["Fac"], ramp.inputs["Fac"])
+    nt.links.new(ramp.outputs["Color"], bsdf_of(mat).inputs["Base Color"])
+    bump = nt.nodes.new("ShaderNodeBump")
+    bump.inputs["Strength"].default_value = 0.05
+    nt.links.new(wave.outputs["Fac"], bump.inputs["Height"])
+    nt.links.new(bump.outputs["Normal"], bsdf_of(mat).inputs["Normal"])
+    return mat
+
+
 def ramp_colors(nt, colors, threshold_positions=None):
     ramp = nt.nodes.new("ShaderNodeValToRGB")
     cr = ramp.color_ramp
@@ -379,15 +443,19 @@ def emission_mix_mat(name, color, strength):
 def build_materials():
     M = {}
     M['chrome'] = new_mat("Chrome", (0.92, 0.92, 0.93), 0.06, 1.0)
+    add_rough_variation(M['chrome'], 0.04, 0.14, 30.0)
     M['chrome_dark'] = new_mat("ChromeDark", (0.6, 0.6, 0.62), 0.12, 1.0)
     M['alu'] = new_mat("BrushedAlu", (0.78, 0.79, 0.8), 0.28, 1.0, Anisotropic=0.7)
-    M['glass'] = new_mat("Glass", (1, 1, 1), 0.0, 0.0, IOR=1.5, Transmission_Weight=1.0)
+    M['glass'] = new_mat("Glass", (1, 1, 1), 0.0, 0.0, IOR=1.2, Transmission_Weight=1.0)
+    add_rough_variation(M['glass'], 0.0, 0.06, 4.0)   # traces de doigts / poussière
     M['paint'] = new_mat("BottleGreenLacquer", MACHINE_GREEN, 0.22, Coat_Weight=0.8, Coat_Roughness=0.04)
+    add_bump(M['paint'], 900, 0.015)          # peau d'orange de la laque
+    add_rough_variation(M['paint'], 0.16, 0.34, 6.0)
     M['paint_inner'] = new_mat("BottleGreenInner", MACHINE_GREEN, 0.35, Coat_Weight=0.4)
     M['cream'] = new_mat("CreamEnamel", (0.85, 0.78, 0.64), 0.3, Coat_Weight=0.5)
     M['neon'] = emission_mix_mat("NeonGreen", NEON_COLOR, NEON_STRENGTH)
     M['letters'] = emission_mix_mat("MarqueeLetters", (0.95, 0.88, 0.74), 1.2)
-    M['ceiling'] = emission_mix_mat("CeilingLightBox", (1.0, 0.9, 0.76), 1.5)
+    M['ceiling'] = emission_mix_mat("CeilingLightBox", (1.0, 0.9, 0.76), 1.0)
     M['rubber'] = new_mat("BlackRubberMatte", (0.02, 0.02, 0.02), 0.7)
     M['slot'] = new_mat("CoinSlotBlack", (0.005, 0.005, 0.005), 0.5)
     M['joy_ball'] = new_mat("JoystickBall", (0.6, 0.01, 0.02), 0.12, Coat_Weight=1.0)
@@ -425,6 +493,7 @@ def build_materials():
                   for i, (cols, pat, sc) in enumerate(combos)]
     for m in M['wraps']:
         add_bump(m, 600, 0.05)
+        add_crinkle(m, random.uniform(30, 70), 0.3)
     M['ribbons'] = [
         new_mat("RibbonGold", (0.9, 0.68, 0.32), 0.25, 1.0),
         new_mat("RibbonRedSatin", (0.55, 0.01, 0.03), 0.28, Sheen_Weight=0.6),
@@ -498,7 +567,7 @@ def build_cabinet(M):
             box(f"Post_{sx}_{sy}", (POST, POST, h + 0.02),
                 (sx * (w / 2 + POST / 2), sy * (d / 2 + POST / 2), h / 2), mat=paint, bevel=0.004, coll=coll)
         neon_h = h + BASE_H - 0.1
-        neon = box(f"Neon_{sx}", (0.012, 0.012, neon_h),
+        neon = box(f"Neon_{sx}", (0.02, 0.02, neon_h),
                    (sx * (OUT_W / 2 + 0.003), -OUT_D / 2 - 0.003, FLOOR_Z + 0.08 + neon_h / 2),
                    mat=M['neon'], bevel=0.004, coll=coll)
         neon.visible_shadow = False
@@ -626,58 +695,198 @@ def parquet_mat():
     return mat
 
 
-def build_room(M):
-    coll = new_collection("HotelRoom")
-    wall_y = OUT_D / 2 + 0.3
-    wall_mat = new_mat("WallPaint", (0.42, 0.33, 0.24), 0.75)
-    trim = new_mat("WallTrim", (0.46, 0.37, 0.27), 0.4, Coat_Weight=0.3)
-    rug = new_mat("RedVelvetRug", (0.3, 0.006, 0.012), 0.85, Sheen_Weight=0.5, Sheen_Roughness=0.4,
-                  Sheen_Tint=(1.0, 0.25, 0.25, 1.0))
-    add_bump(rug, 900, 0.3)
+# Encadrement de porte façon référence : la borne est posée dans l'ouverture d'une
+# grande porte double, sur un seuil surélevé ; la pièce derrière reste dans le noir.
+WALL_Y = -OUT_D / 2 - 0.24          # face avant de la façade
+WALL_T = 0.32
+OPEN_W, OPEN_H = 1.72, 2.7           # ouverture de la porte double
+STEP_H, STEP_D = 0.15, 1.25         # seuil surélevé devant la porte
+DOOR_OPEN = 100.0                   # angle d'ouverture des battants (°)
 
-    box("RoomFloor", (7, 7, 0.02), (0, -1.5, FLOOR_Z - 0.01), mat=parquet_mat(), coll=coll)
-    box("BackWall", (7, 0.05, 3.2), (0, wall_y + 0.025, FLOOR_Z + 1.6), mat=wall_mat, coll=coll)
+
+def stone_tiles_mat():
+    mat = new_mat("LobbyStone", (0.42, 0.39, 0.34), 0.3)
+    nt = mat.node_tree
+    tc = nt.nodes.new("ShaderNodeTexCoord")
+    brick = nt.nodes.new("ShaderNodeTexBrick")
+    brick.offset = 0.0
+    brick.inputs["Color1"].default_value = (0.46, 0.43, 0.38, 1)
+    brick.inputs["Color2"].default_value = (0.38, 0.35, 0.3, 1)
+    brick.inputs["Mortar"].default_value = (0.2, 0.18, 0.16, 1)
+    brick.inputs["Scale"].default_value = 1.0
+    brick.inputs["Mortar Size"].default_value = 0.003
+    brick.inputs["Brick Width"].default_value = 0.6
+    brick.inputs["Row Height"].default_value = 0.6
+    nt.links.new(tc.outputs["Object"], brick.inputs["Vector"])
+    noise = nt.nodes.new("ShaderNodeTexNoise")
+    noise.inputs["Scale"].default_value = 6.0
+    noise.inputs["Detail"].default_value = 12.0
+    nt.links.new(tc.outputs["Object"], noise.inputs["Vector"])
+    mix = nt.nodes.new("ShaderNodeMix")
+    mix.data_type = 'RGBA'
+    mix.blend_type = 'OVERLAY'
+    mix.inputs[0].default_value = 0.35
+    nt.links.new(brick.outputs["Color"], mix.inputs[6])
+    nt.links.new(noise.outputs["Color"], mix.inputs[7])
+    nt.links.new(mix.outputs[2], bsdf_of(mat).inputs["Base Color"])
+    bump = nt.nodes.new("ShaderNodeBump")
+    bump.inputs["Strength"].default_value = 0.2
+    nt.links.new(brick.outputs["Fac"], bump.inputs["Height"])
+    nt.links.new(bump.outputs["Normal"], bsdf_of(mat).inputs["Normal"])
+    add_rough_variation(mat, 0.18, 0.5, 3.0)
+    return mat
+
+
+def carpet_mat():
+    mat = new_mat("RedCarpet", (0.25, 0.006, 0.01), 0.95, Sheen_Weight=0.35, Sheen_Roughness=0.5,
+                  Sheen_Tint=(1.0, 0.2, 0.2, 1.0))
+    nt = mat.node_tree
+    tc = nt.nodes.new("ShaderNodeTexCoord")
+    fib = nt.nodes.new("ShaderNodeTexNoise")
+    fib.inputs["Scale"].default_value = 1800.0
+    fib.inputs["Detail"].default_value = 2.0
+    nt.links.new(tc.outputs["Object"], fib.inputs["Vector"])
+    blot = nt.nodes.new("ShaderNodeTexNoise")
+    blot.inputs["Scale"].default_value = 4.0
+    nt.links.new(tc.outputs["Object"], blot.inputs["Vector"])
+    ramp = nt.nodes.new("ShaderNodeValToRGB")
+    ramp.color_ramp.elements[0].color = (0.16, 0.004, 0.007, 1)
+    ramp.color_ramp.elements[1].color = (0.3, 0.01, 0.014, 1)
+    nt.links.new(blot.outputs["Fac"], ramp.inputs["Fac"])
+    nt.links.new(ramp.outputs["Color"], bsdf_of(mat).inputs["Base Color"])
+    bump = nt.nodes.new("ShaderNodeBump")
+    bump.inputs["Strength"].default_value = 0.6
+    bump.inputs["Distance"].default_value = 0.002
+    nt.links.new(fib.outputs["Fac"], bump.inputs["Height"])
+    nt.links.new(bump.outputs["Normal"], bsdf_of(mat).inputs["Normal"])
+    return mat
+
+
+def build_carpet(mat, coll):
+    """Tapis épais : posé sur le seuil, il épouse le nez de marche puis file vers la caméra."""
+    w, th = 1.15, 0.012
+    y_in = -OUT_D / 2 + 0.05
+    y_edge = WALL_Y - STEP_D
+    z_top, z_low = FLOOR_Z, FLOOR_Z - STEP_H
+    prof = [(y_in, z_top)]
+    prof += [(y_edge + 0.02 - 0.02 * math.sin(a), z_top - 0.02 + 0.02 * math.cos(a))
+             for a in [math.radians(k * 15) for k in range(0, 7)]]
+    prof += [(y_edge - 0.03, z_low + 0.03), (y_edge - 0.06, z_low), (y_edge - 6.0, z_low)]
+    # densifie les segments longs pour la subdivision + displacement
+    pts = []
+    for (y0, z0), (y1, z1) in zip(prof, prof[1:]):
+        n = max(1, int(abs(y1 - y0) / 0.05))
+        pts += [(y0 + (y1 - y0) * k / n, z0 + (z1 - z0) * k / n) for k in range(n)]
+    pts.append(prof[-1])
+    mesh = bpy.data.meshes.new("RedCarpet")
+    bm = bmesh.new()
+    nx = 24
+    grid = [[bm.verts.new((-w / 2 + w * i / nx, y, z + th)) for i in range(nx + 1)] for y, z in pts]
+    for r0, r1 in zip(grid, grid[1:]):
+        for i in range(nx):
+            bm.faces.new((r0[i], r0[i + 1], r1[i + 1], r1[i]))
+    bm.to_mesh(mesh)
+    bm.free()
+    obj = link(bpy.data.objects.new("RedCarpet", mesh), coll)
+    obj.data.materials.append(mat)
+    sol = obj.modifiers.new("Thickness", 'SOLIDIFY')
+    sol.thickness = th
+    sol.offset = -1
+    tex = bpy.data.textures.new("CarpetWaves", 'CLOUDS')
+    tex.noise_scale = 0.6
+    disp = obj.modifiers.new("Ripples", 'DISPLACE')
+    disp.texture = tex
+    disp.strength = 0.006
+    disp.direction = 'Z'
+    smooth(obj)
+    return obj
+
+
+def build_door(name, hinge_x, sgn, M, coll):
+    """Battant blanc mouluré, ouvert vers l'extérieur ; origine sur l'axe des charnières."""
+    piv = empty(name, (hinge_x, WALL_Y - 0.04, FLOOR_Z), coll=coll, size=0.1)
+    dw, dt, dh = OPEN_W / 2 - 0.02, 0.055, OPEN_H - 0.03
+    paint = M['door_paint']
+    leaf = box(f"{name}_Leaf", (dw, dt, dh), (sgn * (dw / 2 + 0.01), 0, dh / 2 + 0.005), mat=paint,
+               bevel=0.004, coll=coll)
+    parent(leaf, piv)
+    parts = []
+    for side in (-1, 1):
+        y = side * (dt / 2 + 0.006)
+        for zc, ph in ((0.55, 0.62), (1.72, 1.55)):
+            parts += panel_frame(f"{name}_Panel_{side}_{zc}", dw - 0.2, ph, (sgn * (dw / 2 + 0.01), y, zc),
+                                 0.014, paint, coll, bar=0.035)
+        # Poignée-béquille chromée
+        hx = sgn * (dw - 0.07)
+        parts.append(cylinder(f"{name}_Rosette_{side}", 0.026, 0.01, (hx, y + side * 0.002, 1.02),
+                              (math.radians(90), 0, 0), mat=M['chrome'], coll=coll))
+        parts.append(curve_obj(f"{name}_Lever_{side}",
+                               [(hx, y + side * 0.004, 1.02), (hx, y + side * 0.05, 1.02),
+                                (hx - sgn * 0.11, y + side * 0.055, 1.015)], 0.008, mat=M['chrome'], coll=coll))
+    for zc in (0.25, 1.35, 2.45):
+        parts.append(cylinder(f"{name}_Hinge_{zc}", 0.011, 0.1, (0, 0, zc), mat=M['brass'], coll=coll))
+    for p_ in parts:
+        parent(p_, piv)
+    piv.rotation_euler.z = math.radians(-sgn * DOOR_OPEN)
+    return piv
+
+
+def build_entrance(M):
+    coll = new_collection("Entrance")
+    facade = wood_mat("FacadeWalnut", (0.08, 0.045, 0.028), (0.13, 0.075, 0.045), 0.4, (1.5, 1.5, 12.0), 0.4)
+    trim = wood_mat("FacadeTrim", (0.09, 0.05, 0.03), (0.15, 0.085, 0.05), 0.32, (1.5, 1.5, 12.0), 0.5)
+    M['door_paint'] = new_mat("DoorPaint", (0.62, 0.6, 0.55), 0.45, Coat_Weight=0.15)
+    add_rough_variation(M['door_paint'], 0.25, 0.5, 5.0)
+    add_bump(M['door_paint'], 700, 0.02)
+    dark = new_mat("InteriorDark", (0.03, 0.025, 0.02), 0.6)
+
+    yc = WALL_Y + WALL_T / 2
+    side_w = 3.0
     for sx in (-1, 1):
-        box(f"SideWall_{sx}", (0.05, 7, 3.2), (sx * 3.2, -1.5, FLOOR_Z + 1.6), mat=wall_mat, coll=coll)
-    box("RoomCeiling", (7, 7, 0.05), (0, -1.5, FLOOR_Z + 3.2), mat=wall_mat, coll=coll)
+        box(f"Facade_{sx}", (side_w, WALL_T, 4.2), (sx * (OPEN_W / 2 + side_w / 2), yc, FLOOR_Z + 2.1 - STEP_H),
+            mat=facade, coll=coll)
+        # Pilastre + chambranle
+        box(f"Pilaster_{sx}", (0.3, 0.07, 4.0), (sx * (OPEN_W / 2 + 0.36), WALL_Y - 0.035, FLOOR_Z + 2.0 - STEP_H),
+            mat=trim, bevel=0.01, coll=coll)
+        box(f"Casing_{sx}", (0.1, 0.05, OPEN_H + 0.1), (sx * (OPEN_W / 2 + 0.05), WALL_Y - 0.025,
+            FLOOR_Z + (OPEN_H + 0.1) / 2), mat=trim, bevel=0.008, coll=coll)
+        box(f"Reveal_{sx}", (0.02, WALL_T, OPEN_H), (sx * (OPEN_W / 2 + 0.01), yc, FLOOR_Z + OPEN_H / 2),
+            mat=facade, coll=coll)
+    lint_h = 4.2 - STEP_H - OPEN_H
+    box("Lintel", (OPEN_W, WALL_T, lint_h), (0, yc, FLOOR_Z + OPEN_H + lint_h / 2), mat=facade, coll=coll)
+    box("HeadCasing", (OPEN_W + 0.2, 0.06, 0.12), (0, WALL_Y - 0.03, FLOOR_Z + OPEN_H + 0.06), mat=trim,
+        bevel=0.01, coll=coll)
+    # Imposte vitrée au-dessus de la porte
+    tz = FLOOR_Z + OPEN_H + 0.5
+    box("TransomGlass", (OPEN_W - 0.1, 0.01, 0.6), (0, WALL_Y + 0.03, tz),
+        mat=new_mat("TransomGlass", (0.02, 0.02, 0.02), 0.05, Coat_Weight=1.0), coll=coll)
+    panel_frame("TransomFrame", OPEN_W, 0.74, (0, WALL_Y - 0.01, tz), 0.04, trim, coll, bar=0.07)
 
-    # Boiseries : plinthe, cimaise, cadres moulurés bas et hauts
-    fy = wall_y - 0.01
-    box("Baseboard", (7, 0.02, 0.14), (0, fy, FLOOR_Z + 0.07), mat=trim, bevel=0.004, coll=coll)
-    box("ChairRail", (7, 0.03, 0.045), (0, fy - 0.005, FLOOR_Z + 0.98), mat=trim, bevel=0.008, coll=coll)
-    box("Cornice", (7, 0.06, 0.09), (0, fy - 0.02, FLOOR_Z + 3.12), mat=trim, bevel=0.01, coll=coll)
-    for k in range(-4, 5):
-        x = k * 0.75
-        if abs(x) < 0.5:
-            continue
-        panel_frame(f"WainscotLow_{k}", 0.6, 0.64, (x, fy, FLOOR_Z + 0.55), 0.015, trim, coll)
-        panel_frame(f"WainscotHigh_{k}", 0.6, 1.55, (x, fy, FLOOR_Z + 1.95), 0.015, trim, coll)
+    # Seuil surélevé + sol du hall
+    box("Threshold", (OPEN_W + 1.2, STEP_D, STEP_H), (0, WALL_Y - STEP_D / 2, FLOOR_Z - STEP_H / 2),
+        mat=new_mat("ThresholdStone", (0.05, 0.045, 0.04), 0.35, Coat_Weight=0.2), bevel=0.01, coll=coll)
+    lobby = box("LobbyFloor", (12, 14, 0.02), (0, WALL_Y - 7, FLOOR_Z - STEP_H - 0.01), mat=stone_tiles_mat(),
+                coll=coll)
+    lobby.name = "LobbyFloor"
 
-    # Appliques murales en laiton avec abat-jour chaud
-    shade = emission_mix_mat("LampShade", (1.0, 0.78, 0.5), 3.0)
+    # Pièce sombre derrière
+    box("InteriorFloor", (OPEN_W + 2, 3, 0.02), (0, WALL_Y + 1.5, FLOOR_Z - 0.01), mat=parquet_mat(), coll=coll)
+    box("InteriorBack", (6, 0.05, 4), (0, 2.6, FLOOR_Z + 2), mat=dark, coll=coll)
+    box("InteriorCeiling", (6, 4, 0.05), (0, 0.8, FLOOR_Z + OPEN_H + 0.3), mat=dark, coll=coll)
     for sx in (-1, 1):
-        x, z = sx * 1.05, FLOOR_Z + 1.75
-        cylinder(f"SconcePlate_{sx}", 0.045, 0.012, (x, fy - 0.006, z - 0.12), (math.radians(90), 0, 0),
-                 mat=M['brass'], coll=coll)
-        curve_obj(f"SconceArm_{sx}", [(x, fy - 0.01, z - 0.12), (x, fy - 0.12, z - 0.1), (x, fy - 0.14, z - 0.02)],
-                  0.007, mat=M['brass'], coll=coll)
-        mesh = bpy.data.meshes.new(f"SconceShade_{sx}")
-        bm = bmesh.new()
-        bmesh.ops.create_cone(bm, cap_ends=False, segments=48, radius1=0.1, radius2=0.065, depth=0.16)
-        bm.to_mesh(mesh)
-        bm.free()
-        sh = link(bpy.data.objects.new(f"SconceShade_{sx}", mesh), coll)
-        sh.data.materials.append(shade)
-        sh.location = (x, fy - 0.14, z + 0.06)
-        smooth(sh)
-        sol = sh.modifiers.new("Thickness", 'SOLIDIFY')
-        sol.thickness = 0.003
-        ld = bpy.data.lights.new(f"SconceLight_{sx}", 'POINT')
-        ld.energy, ld.color, ld.shadow_soft_size = 40, (1.0, 0.7, 0.42), 0.04
-        link(bpy.data.objects.new(f"SconceLight_{sx}", ld), coll).location = (x, fy - 0.14, z + 0.05)
+        box(f"InteriorSide_{sx}", (0.05, 4, 4), (sx * 2.2, 0.8, FLOOR_Z + 2), mat=dark, coll=coll)
 
-    # Tapis rouge velours devant la borne
-    box("RedRunner", (1.05, 3.2, 0.012), (0, -OUT_D / 2 - 1.5, FLOOR_Z + 0.006), mat=rug, bevel=0.004, coll=coll)
+    # Portes ouvertes + bras de retenue
+    for sx in (-1, 1):
+        build_door(f"Door_{'L' if sx < 0 else 'R'}", sx * OPEN_W / 2, -sx, M, coll)
+        a = math.radians(-(-sx) * DOOR_OPEN)
+        ex = sx * OPEN_W / 2 + (-sx) * 0.75 * math.cos(a)
+        ey = WALL_Y - 0.04 + (-sx) * 0.75 * math.sin(a)
+        curve_obj(f"DoorStay_{sx}", [(ex, ey, FLOOR_Z + OPEN_H - 0.08),
+                                     (sx * (OPEN_W / 2 - 0.5), WALL_Y - 0.01, FLOOR_Z + OPEN_H + 0.04)],
+                  0.006, mat=M['chrome_dark'], kind='POLY', coll=coll)
+
+    build_carpet(carpet_mat(), coll)
     return coll
 
 
@@ -1066,38 +1275,79 @@ def area_light(name, size, energy, loc, rot, color=(1, 1, 1), visible_glossy=Tru
 
 def build_lighting(M):
     coll = new_collection("Lighting")
-    # Caisson lumineux du plafond de la vitrine (lumière principale du jeu)
-    area_light("Ceiling_Panel", (CAB_W * 0.9, CAB_D * 0.9), 35, (0, 0, CAB_H - 0.03), (0, 0, 0),
-               (1.0, 0.88, 0.72), coll=coll)
-    # Douce lumière de face (fenêtre hors champ, à gauche)
-    area_light("Window_Key", (1.2, 1.8), 60, (-1.6, -2.4, 0.6),
-               (math.radians(78), 0, math.radians(-35)), (1.0, 0.86, 0.7), coll=coll)
-    # Tache de soleil chaude sur le tapis et le meuble (comme sur la référence)
-    sd = bpy.data.lights.new("SunPatch", 'SPOT')
-    sd.energy, sd.color = 450, (1.0, 0.72, 0.45)
-    sd.spot_size, sd.spot_blend, sd.shadow_soft_size = math.radians(22), 0.25, 0.05
-    sun = link(bpy.data.objects.new("SunPatch", sd), coll)
-    sun.location = (-1.8, -2.6, FLOOR_Z + 2.9)
-    aim = empty("SunPatch_Target", (0.1, -0.9, FLOOR_Z + 0.2), coll=coll)
+    # Caisson lumineux du plafond de la vitrine
+    area_light("Ceiling_Panel", (CAB_W * 0.9, CAB_D * 0.9), 40, (0, 0, CAB_H - 0.03), (0, 0, 0),
+               (1.0, 0.9, 0.78), coll=coll)
+    # Soleil rasant (ombres nettes en diagonale sur le tapis et les portes, comme la référence)
+    sd = bpy.data.lights.new("Sun", 'SUN')
+    sd.energy, sd.color, sd.angle = 10.0, (1.0, 0.78, 0.55), math.radians(0.6)
+    sun = link(bpy.data.objects.new("Sun", sd), coll)
+    sun.location = (-4.0, -3.2, 2.2)
+    aim = empty("Sun_Target", (0.5, -1.3, FLOOR_Z), coll=coll)
     tt = sun.constraints.new('TRACK_TO')
     tt.target, tt.track_axis, tt.up_axis = aim, 'TRACK_NEGATIVE_Z', 'UP_Y'
-    # Contre-jour discret pour détacher la pince du fond vert
-    area_light("Rim_Back", (0.5, 0.25), 25, (0.25, 0.25, 0.75), (math.radians(-140), 0, math.radians(20)),
+    # Pan d'ombre hors champ (bord d'un bâtiment / d'une verrière) : seule une diagonale de
+    # soleil tombe sur le bas du tapis et le battant droit, comme sur la photo de référence.
+    def edge_y(x):
+        return -2.95 + 0.1125 * (x + 2.0)
+    zc = FLOOR_Z + 4.38
+    mesh = bpy.data.meshes.new("SunOccluder")
+    mesh.from_pydata([(-10, edge_y(-10), zc), (3, edge_y(3), zc), (3, 3, zc), (-10, 3, zc)], [], [(0, 1, 2, 3)])
+    occ = link(bpy.data.objects.new("SunOccluder", mesh), coll)
+    occ.visible_camera = False
+    occ.visible_glossy = False
+    occ.visible_transmission = False
+    occ.visible_diffuse = False
+    # Lumière du hall (grande baie hors champ derrière la caméra) : douce et froide
+    area_light("Lobby_Fill", (3.0, 2.0), 18, (0.5, -9.5, FLOOR_Z + 1.6), (math.radians(90), 0, 0),
+               (0.85, 0.9, 1.0), coll=coll)
+    # Contre-jour discret dans la vitrine pour détacher la pince du fond
+    area_light("Rim_Back", (0.5, 0.25), 15, (0.25, 0.25, 0.75), (math.radians(-140), 0, math.radians(20)),
                (1.0, 0.9, 0.8), coll=coll)
 
-    # Cartes réfléchissantes invisibles à la caméra : longues lignes claires dans le chrome
     for sx in (-1, 1):
         card = box(f"ReflectCard_{sx}", (0.02, 0.4, 2.0), (sx * 0.8, -0.9, 0.6),
                    (0, 0, math.radians(sx * 35)), mat=M['card'], coll=coll)
         card.visible_camera = False
         card.visible_shadow = False
 
-    world = bpy.data.worlds.new("HotelWorld")
+    world = bpy.data.worlds.new("LobbyWorld")
     world.use_nodes = True
     bg = world.node_tree.nodes["Background"]
-    bg.inputs["Color"].default_value = (0.9, 0.7, 0.5, 1.0)
-    bg.inputs["Strength"].default_value = 0.04
+    bg.inputs["Color"].default_value = (0.75, 0.8, 0.9, 1.0)
+    bg.inputs["Strength"].default_value = 0.05
     bpy.context.scene.world = world
+
+
+def setup_compositor(scene):
+    """Léger halo (bloom) sur les néons et l'enseigne, comme un vrai capteur photo."""
+    try:
+        if hasattr(scene, "compositing_node_group"):          # Blender 5.x
+            tree = bpy.data.node_groups.new("Compositor", "CompositorNodeTree")
+            tree.interface.new_socket("Image", in_out='OUTPUT', socket_type='NodeSocketColor')
+            scene.compositing_node_group = tree
+            rl = tree.nodes.new("CompositorNodeRLayers")
+            out = tree.nodes.new("NodeGroupOutput")
+        else:                                                 # Blender 4.x
+            scene.use_nodes = True
+            tree = scene.node_tree
+            rl = tree.nodes.get("Render Layers") or tree.nodes.new("CompositorNodeRLayers")
+            out = tree.nodes.get("Composite") or tree.nodes.new("CompositorNodeComposite")
+        glare = tree.nodes.new("CompositorNodeGlare")
+        if "Type" in glare.inputs:
+            glare.inputs["Type"].default_value = 'Bloom'
+            glare.inputs["Threshold"].default_value = 1.2
+            glare.inputs["Strength"].default_value = 0.35
+            glare.inputs["Size"].default_value = 0.6
+        else:
+            glare.glare_type = 'FOG_GLOW'
+            glare.threshold = 1.2
+            glare.mix = -0.7
+            glare.size = 8
+        tree.links.new(rl.outputs["Image"], glare.inputs["Image"])
+        tree.links.new(glare.outputs["Image"], out.inputs[0])
+    except Exception as exc:
+        print("Compositeur ignoré :", exc)
 
 
 def build_camera(focus_obj):
@@ -1120,7 +1370,7 @@ def build_camera(focus_obj):
 
 
 # Plan large (position caméra, cible, focale) -> plan serré sur la pince
-CAM_WIDE = ((0.0, -3.6, 0.05), (0.0, 0.0, 0.08), 42)
+CAM_WIDE = ((0.0, WALL_Y - 7.0, FLOOR_Z + 1.25), (0.0, WALL_Y, FLOOR_Z + 1.45), 62)
 CAM_CLOSE = ((0.02, -1.25, 0.5), (0.02, -0.07, 0.47), 85)
 
 
@@ -1157,7 +1407,7 @@ def setup_render(scene):
             break
         except TypeError:
             pass
-    scene.view_settings.exposure = -0.8
+    scene.view_settings.exposure = 0.0
 
     if USE_GPU:
         try:
@@ -1269,7 +1519,7 @@ def main():
     rig.location = (-0.16, CARD_XY[1], 0.62)
     build_cable(M, rig, cable_attach, claw_coll)
     build_gantry(M, rig)
-    build_room(M)
+    build_entrance(M)
 
     _, gifts = build_pile(M, colliders)
     base = max(0.0, pile_height_near(gifts, *CARD_XY) - CARD_SIZE[2] * 0.62)
@@ -1280,6 +1530,7 @@ def main():
     build_lighting(M)
     cam, cam_target = build_camera(env)
     setup_render(scene)
+    setup_compositor(scene)
     F = animate(rig, hinges, env)
     animate_camera(cam, cam_target, 1, F['top'])
     scene.frame_set(1)
