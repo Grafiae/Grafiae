@@ -1,15 +1,15 @@
 """
-Claw Machine — "la pince qui pêche une enveloppe"
-==================================================
+Claw Machine de Noël — "la pince qui pêche un chèque-cadeau"
+==================================================================
 
 Script Blender (4.2+ / 5.x) qui construit TOUTE la scène de façon procédurale :
   - vitrine de machine à pince (verre, cadre alu brossé, fond blanc rétro-éclairé)
   - pince chromée (corps, 3 griffes articulées, fil rouge, câble spiralé noir)
   - pile de cadeaux emballés (papiers à motifs, rubans, nœuds) + quelques
     boules et pots en céramique, posés par simulation physique (rigid body)
-  - une enveloppe en papier avec cachet de cire, que la pince va chercher
+  - un chèque-cadeau recto/verso (textures/cheque_*.png), que la pince va chercher
   - éclairage studio doux façon photo produit, caméra 4:5 avec profondeur de champ
-  - animation complète : approche, descente, fermeture, remontée avec l'enveloppe
+  - animation complète : approche, descente, fermeture, remontée avec le chèque-cadeau
 
 Utilisation
 -----------
@@ -48,8 +48,9 @@ SAMPLES = 256               # échantillons Cycles pour le rendu final
 USE_GPU = True
 
 CAB_W, CAB_D, CAB_H = 0.62, 0.50, 0.80   # dimensions intérieures de la vitrine (m)
-ENV_SIZE = (0.162, 0.0025, 0.114)        # enveloppe format C6
-ENV_XY = (0.02, -0.07)                   # position de l'enveloppe dans la pile
+CARD_SIZE = (0.105, 0.0012, 0.159)      # chèque-cadeau (proportions du visuel 895x1356)
+CARD_CORNER = 0.0045                    # rayon des coins arrondis
+CARD_XY = (0.02, -0.07)                 # position du chèque-cadeau dans la pile
 
 random.seed(SEED)
 
@@ -381,12 +382,11 @@ def build_materials():
     add_bump(M['string'], 2000, 0.3)
     M['cable'] = new_mat("BlackRubber", (0.012, 0.012, 0.014), 0.42)
 
-    paper = new_mat("EnvelopePaper", (0.96, 0.89, 0.76), 0.72, Sheen_Weight=0.1)
+    paper = new_mat("LabelPaper", (0.96, 0.89, 0.76), 0.72, Sheen_Weight=0.1)
     set_in(bsdf_of(paper), "Subsurface Weight", 0.08)
     set_in(bsdf_of(paper), "Subsurface Radius", (0.002, 0.0015, 0.001))
     add_bump(paper, 900, 0.12)
     M['paper'] = paper
-    M['wax'] = new_mat("WaxSeal", (0.42, 0.02, 0.03), 0.32, Subsurface_Weight=0.15, Coat_Weight=0.2)
 
     # Palette de Noël : rouge profond, vert sapin, or, crème, kraft, blanc neige.
     pal = {
@@ -480,7 +480,7 @@ def build_cabinet(M):
 # ---------------------------------------------------------------------------
 # PINCE
 # ---------------------------------------------------------------------------
-PRONG_PHI = (0.0, 120.0, 240.0)      # 0° = griffe arrière (derrière l'enveloppe)
+PRONG_PHI = (0.0, 120.0, 240.0)      # 0° = griffe arrière (derrière la carte)
 HINGE_R = 0.026
 OPEN_ANGLE = math.radians(30)
 CLOSED_ANGLE = math.radians(-1)
@@ -654,8 +654,8 @@ def build_pile(M, colliders):
         o, shape = mk(M, i, coll)
         objs.append((o, shape))
 
-    # Zone réservée à l'enveloppe pendant la simulation (supprimée ensuite)
-    keepout = box("Keepout", (ENV_SIZE[0] + 0.01, 0.025, 4.0), (ENV_XY[0], ENV_XY[1], 2.0), coll=coll)
+    # Zone réservée à la carte pendant la simulation (supprimée ensuite)
+    keepout = box("Keepout", (CARD_SIZE[0] + 0.01, 0.025, 4.0), (CARD_XY[0], CARD_XY[1], 2.0), coll=coll)
 
     # Lâcher en spirale : positions aléatoires, chaque objet un peu plus haut que le
     # précédent, en évitant de superposer deux objets consécutifs -> vrai tas.
@@ -664,7 +664,7 @@ def build_pile(M, colliders):
         for _attempt in range(50):
             x = random.uniform(-CAB_W / 2 + 0.07, CAB_W / 2 - 0.07)
             y = random.uniform(-CAB_D / 2 + 0.07, CAB_D / 2 - 0.07)
-            if abs(x - ENV_XY[0]) < 0.11 and abs(y - ENV_XY[1]) < 0.05:
+            if abs(x - CARD_XY[0]) < 0.11 and abs(y - CARD_XY[1]) < 0.05:
                 continue
             if all((Vector((x, y)) - p).length > 0.16 for p in recent[-6:]):
                 break
@@ -732,60 +732,91 @@ def pile_height_near(objs, x, y, radius=0.16):
 
 
 # ---------------------------------------------------------------------------
-# ENVELOPPE
+# CHÈQUE-CADEAU
 # ---------------------------------------------------------------------------
 
 
-def build_envelope(M, base_z):
-    coll = new_collection("Envelope")
-    w, t, h = ENV_SIZE
-    env = box("Envelope", (w, t, h), mat=M['paper'], bevel=0.0006, coll=coll)
+def texture_dir():
+    try:
+        here = os.path.dirname(os.path.abspath(__file__))
+    except NameError:
+        here = ""
+    for d in (here, bpy.path.abspath("//"), os.getcwd()):
+        if d and os.path.isdir(os.path.join(d, "textures")):
+            return os.path.join(d, "textures")
+    raise FileNotFoundError("Dossier 'textures' introuvable à côté du script")
 
-    # Rabat triangulaire côté caméra (-Y) : prisme fin, pointe vers le bas
-    mesh = bpy.data.meshes.new("EnvelopeFlap")
+
+def card_face_mat(name, filename):
+    """Impression du chèque-cadeau : image en couleur de base, papier couché satiné."""
+    mat = new_mat(name, (1, 1, 1), 0.42, Coat_Weight=0.15, Coat_Roughness=0.25)
+    nt = mat.node_tree
+    img = bpy.data.images.load(os.path.join(texture_dir(), filename), check_existing=True)
+    img.pack()
+    tex = nt.nodes.new("ShaderNodeTexImage")
+    tex.image = img
+    tex.interpolation = 'Cubic'
+    nt.links.new(tex.outputs["Color"], bsdf_of(mat).inputs["Base Color"])
+    add_bump(mat, 1200, 0.04)
+    return mat
+
+
+def rounded_rect(w, h, r, seg=8):
+    pts = []
+    for cx, cz, a0 in ((w / 2 - r, h / 2 - r, 0), (-w / 2 + r, h / 2 - r, 90),
+                       (-w / 2 + r, -h / 2 + r, 180), (w / 2 - r, -h / 2 + r, 270)):
+        for k in range(seg + 1):
+            a = math.radians(a0 + 90 * k / seg)
+            pts.append((cx + r * math.cos(a), cz + r * math.sin(a)))
+    return pts
+
+
+def build_card(M, base_z):
+    """Chèque-cadeau recto/verso : carte cartonnée à coins arrondis.
+    Recto (côté caméra, -Y) = textures/cheque_recto.png, verso (+Y) = textures/cheque_verso.png."""
+    coll = new_collection("GiftCard")
+    w, t, h = CARD_SIZE
+    mats = [card_face_mat("Card_Recto", "cheque_recto.png"),
+            card_face_mat("Card_Verso", "cheque_verso.png"),
+            new_mat("Card_Edge", (0.92, 0.9, 0.86), 0.7)]
+
+    mesh = bpy.data.meshes.new("GiftCard")
     bm = bmesh.new()
-    th = 0.0005
-    tri = [(-w / 2 + 0.001, h / 2 - 0.0005), (w / 2 - 0.001, h / 2 - 0.0005), (0, h / 2 - h * 0.58)]
-    front = [bm.verts.new((x, -t / 2 - th, z)) for x, z in tri]
-    back = [bm.verts.new((x, -t / 2, z)) for x, z in tri]
-    bm.faces.new(front[::-1])
-    bm.faces.new(back)
-    for k in range(3):
-        bm.faces.new((front[k], front[(k + 1) % 3], back[(k + 1) % 3], back[k]))
+    uv = bm.loops.layers.uv.new("UVMap")
+    outline = rounded_rect(w, h, CARD_CORNER)
+    front = [bm.verts.new((x, -t / 2, z)) for x, z in outline]
+    back = [bm.verts.new((x, t / 2, z)) for x, z in outline]
+    f_front = bm.faces.new(front)        # normale vers -Y (caméra)
+    f_back = bm.faces.new(back[::-1])
+    if f_front.normal.y > 0:
+        f_front.normal_flip()
+    if f_back.normal.y < 0:
+        f_back.normal_flip()
+    f_front.material_index, f_back.material_index = 0, 1
+    for loop in f_front.loops:
+        x, _, z = loop.vert.co
+        loop[uv].uv = ((x + w / 2) / w, (z + h / 2) / h)
+    for loop in f_back.loops:            # vu de derrière : image miroir en X
+        x, _, z = loop.vert.co
+        loop[uv].uv = ((w / 2 - x) / w, (z + h / 2) / h)
+    n = len(outline)
+    for k in range(n):
+        side = bm.faces.new((front[k], back[k], back[(k + 1) % n], front[(k + 1) % n]))
+        side.material_index = 2
+    bmesh.ops.recalc_face_normals(bm, faces=[f for f in bm.faces if f.material_index == 2])
     bm.to_mesh(mesh)
     bm.free()
-    flap = link(bpy.data.objects.new("Envelope_Flap", mesh), coll)
-    flap.data.materials.append(M['paper'])
-    parent(flap, env)
+    card = link(bpy.data.objects.new("GiftCard", mesh), coll)
+    for m in mats:
+        card.data.materials.append(m)
+    bev = card.modifiers.new("Bevel", 'BEVEL')
+    bev.width = t * 0.3
+    bev.segments = 2
+    bev.limit_method = 'ANGLE'
 
-    # Plis latéraux du dos (fines lignes en léger relief)
-    for sx in (-1, 1):
-        crease = curve_obj(f"Envelope_Crease_{sx}",
-                           [(sx * (w / 2 - 0.001), -t / 2 - 0.0002, -h / 2 + 0.001),
-                            (sx * 0.012, -t / 2 - 0.0002, -h * 0.02)],
-                           0.00025, mat=M['paper'], kind='POLY', coll=coll)
-        parent(crease, env)
-
-    # Cachet de cire irrégulier
-    seal_y = -t / 2 - th - 0.0018
-    seal = cylinder("Envelope_WaxSeal", 0.0135, 0.0036, (0, seal_y, h / 2 - h * 0.58 + 0.004),
-                    (math.radians(90), 0, 0), mat=M['wax'], verts=64, coll=coll)
-    sub = seal.modifiers.new("Subdiv", 'SUBSURF')
-    sub.levels = sub.render_levels = 2
-    tex = bpy.data.textures.new("WaxNoise", 'CLOUDS')
-    tex.noise_scale = 0.004
-    disp = seal.modifiers.new("Displace", 'DISPLACE')
-    disp.texture = tex
-    disp.strength = 0.0018
-    disp.texture_coords = 'OBJECT'
-    parent(seal, env)
-    inner = cylinder("Envelope_WaxSealEmboss", 0.0082, 0.0012, (0, seal_y - 0.0022, h / 2 - h * 0.58 + 0.004),
-                     (math.radians(90), 0, 0), mat=M['wax'], bevel=0.0004, verts=64, coll=coll)
-    parent(inner, env)
-
-    env.location = (ENV_XY[0], ENV_XY[1], base_z + h / 2)
-    env.rotation_euler = (math.radians(-2.5), math.radians(-6), math.radians(2))
-    return coll, env
+    card.location = (CARD_XY[0], CARD_XY[1], base_z + h / 2)
+    card.rotation_euler = (math.radians(-2.5), math.radians(-5), math.radians(2))
+    return coll, card
 
 
 def build_fairy_lights(M):
@@ -948,7 +979,7 @@ def animate(rig, hinges, env):
         pass
 
     ex, ey = env.location.x, env.location.y
-    env_top = env.location.z + ENV_SIZE[2] / 2
+    env_top = env.location.z + CARD_SIZE[2] / 2
     grab_z = env_top - 0.032 + TIP_DROP
     top_z = 0.62
     start = (-0.16, ey, top_z)
@@ -985,7 +1016,7 @@ def animate(rig, hinges, env):
         key_rot(h, F['closed'] - 2 + d, (CLOSED_ANGLE, 0, phi))
         key_rot(h, F['end'], (CLOSED_ANGLE, 0, phi))
 
-    # L'enveloppe est "attrapée" : contrainte Child Of activée au moment du pincement
+    # Le chèque-cadeau est "attrapée" : contrainte Child Of activée au moment du pincement
     scene.frame_set(F['grab'])
     rig_mw = rig.matrix_world.copy()
     con = env.constraints.new('CHILD_OF')
@@ -996,7 +1027,7 @@ def animate(rig, hinges, env):
     con.influence = 1.0
     con.keyframe_insert("influence", frame=F['grab'])
 
-    # En remontant, l'enveloppe se redresse légèrement sous son propre poids
+    # En remontant, la carte se redresse légèrement sous son propre poids
     env_rot = env.rotation_euler.copy()
     key_rot(env, F['lift_start'], env_rot)
     key_rot(env, F['top'], (env_rot.x * 0.3, env_rot.y * 0.4, env_rot.z))
@@ -1014,12 +1045,12 @@ def main():
     M = build_materials()
     cab_coll, colliders = build_cabinet(M)
     claw_coll, rig, hinges, cable_attach = build_claw(M)
-    rig.location = (-0.16, ENV_XY[1], 0.62)
+    rig.location = (-0.16, CARD_XY[1], 0.62)
     build_cable(M, rig, cable_attach, claw_coll)
 
     _, gifts = build_pile(M, colliders)
-    base = max(0.0, pile_height_near(gifts, *ENV_XY) - ENV_SIZE[2] * 0.62)
-    _, env = build_envelope(M, base)
+    base = max(0.0, pile_height_near(gifts, *CARD_XY) - CARD_SIZE[2] * 0.62)
+    _, env = build_card(M, base)
 
     if FAIRY_LIGHTS:
         build_fairy_lights(M)

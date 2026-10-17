@@ -1,7 +1,7 @@
-# Claw Machine de Noël 🎄 : la pince qui pêche une enveloppe
+# Claw Machine de Noël 🎄 : la pince qui pêche un chèque-cadeau
 
 Scène Blender 100 % procédurale : une pince de fête foraine chromée plonge dans une
-pile de cadeaux de Noël et en ressort une enveloppe en papier scellée à la cire.
+pile de cadeaux de Noël et en ressort le chèque-cadeau **Le Renard – Hotel & Spa** (recto/verso).
 L'esthétique (fond blanc de studio, vitrine en verre et alu, chrome, câble spiralé
 noir, fil rouge) reprend les photos de référence.
 
@@ -10,7 +10,9 @@ noir, fil rouge) reprend les photos de référence.
 | Fichier | Rôle |
 | --- | --- |
 | `claw_machine.py` | Script qui construit toute la scène (modèles, matériaux, physique, lumières, caméra, animation) |
-| `claw_machine.blend` | Scène déjà générée (enregistrée avec Blender 5.2) |
+| `claw_machine.blend` | Scène déjà générée, textures incluses (enregistrée avec Blender 5.2) |
+| `textures/cheque_recto.png` | Recto du chèque-cadeau (face visible caméra) |
+| `textures/cheque_verso.png` | Verso du chèque-cadeau |
 
 ## Lancer
 
@@ -33,20 +35,22 @@ blender -b claw_machine.blend -a       # rend l'animation dans ./render/
 - **Cadeaux** : boîtes emballées (papiers rayés, à pois, arlequin, kraft…) avec rubans et nœuds,
   boules de Noël, bougies en céramique, sucres d'orge. Ils sont posés par simulation
   *rigid body*, puis figés.
-- **Enveloppe** : papier crème avec grain, rabat, plis, cachet de cire rouge irrégulier.
+- **Chèque-cadeau** : carte cartonnée à coins arrondis (105 × 159 mm), recto et verso imprimés,
+  papier couché satiné avec léger grain. Le script lit les images du dossier `textures/`
+  (garde-le à côté du script).
 - **Ambiance** : deux guirlandes lumineuses chaudes au fond (bokeh), lumière douce de boîte
   à lumière, cartes réfléchissantes invisibles pour les reflets du chrome, AgX contrasté,
-  profondeur de champ calée sur l'enveloppe.
+  profondeur de champ calée sur le chèque-cadeau.
 
 ## Animation (24 i/s, 168 images = 7 s)
 
 | Images | Action |
 | --- | --- |
-| 1 → 42 | Le chariot amène la pince au-dessus de l'enveloppe, avec balancement |
+| 1 → 42 | Le chariot amène la pince au-dessus du chèque-cadeau, avec balancement |
 | 42 → 52 | Ouverture des griffes |
 | 52 → 78 | Descente dans les cadeaux |
-| 78 → 92 | Fermeture : l'enveloppe est pincée (contrainte *Child Of* activée image 90) |
-| 98 → 140 | Remontée avec l'enveloppe, balancement pendulaire |
+| 78 → 92 | Fermeture : la carte est pincée par le haut (contrainte *Child Of* activée image 90) |
+| 98 → 140 | Remontée avec le chèque-cadeau, balancement pendulaire |
 | 140 → 168 | Tenue finale |
 
 ## Réglages rapides (en haut du script)
@@ -55,7 +59,7 @@ blender -b claw_machine.blend -a       # rend l'animation dans ./render/
 - `N_GIFTS`, `N_BALLS`, `N_JARS`, `N_CANES` : quantité d'objets
 - `FAIRY_LIGHTS`, `FRONT_GLASS` : guirlandes et vitre avant
 - `SAMPLES`, `RES_X`, `RES_Y`, `USE_GPU` : qualité et format (4:5 par défaut)
-- `ENV_XY`, `ENV_SIZE` : position et format de l'enveloppe
+- `CARD_XY`, `CARD_SIZE`, `CARD_CORNER` : position, format et arrondi du chèque-cadeau
 
-Astuce : pour personnaliser l'enveloppe (logo, texte), remplace le matériau
-`EnvelopePaper` par une texture image, ou ajoute un objet texte enfant de `Envelope`.
+Pour changer de visuel, remplace simplement `textures/cheque_recto.png` et `cheque_verso.png`
+(même format portrait), puis relance le script.
