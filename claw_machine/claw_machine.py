@@ -980,7 +980,7 @@ def animate(rig, hinges, env):
 
     ex, ey = env.location.x, env.location.y
     env_top = env.location.z + CARD_SIZE[2] / 2
-    grab_z = env_top - 0.032 + TIP_DROP
+    grab_z = env_top - 0.011 + TIP_DROP
     top_z = 0.62
     start = (-0.16, ey, top_z)
 
