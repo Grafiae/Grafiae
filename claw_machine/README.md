@@ -28,8 +28,8 @@ blender -b claw_machine.blend -a       # rend l'animation dans ./render/
 
 ## Contenu de la scène
 
-- **Vitrine** : vitres latérales et avant, cadre en alu brossé, plafond diffusant, fond blanc
-  légèrement émissif (effet studio), sol en acrylique brillant.
+- **Vitrine** : vitres latérales et avant, cadre en alu brossé, plafond diffusant, fond crème
+  chaud en dégradé (halo doré derrière la pile), sol en acrylique brillant.
 - **Pince** : corps tourné chromé, 3 griffes en lame d'acier articulées (empties `Claw_Hinge_*`),
   biellettes, fil de levage rouge, câble spiralé noir qui s'étire (contrainte *Stretch To*).
 - **Cadeaux** : boîtes emballées (papiers rayés, à pois, arlequin, kraft…) avec rubans et nœuds,
@@ -58,6 +58,7 @@ blender -b claw_machine.blend -a       # rend l'animation dans ./render/
 - `SEED` : autre disposition et répartition des cadeaux
 - `N_GIFTS`, `N_BALLS`, `N_JARS`, `N_CANES` : quantité d'objets
 - `FAIRY_LIGHTS`, `FRONT_GLASS` : guirlandes et vitre avant
+- `BACKDROP_TOP`, `BACKDROP_GLOW` : couleurs du fond (crème chaud en haut, halo doré en bas)
 - `SAMPLES`, `RES_X`, `RES_Y`, `USE_GPU` : qualité et format (4:5 par défaut)
 - `CARD_XY`, `CARD_SIZE`, `CARD_CORNER` : position, format et arrondi du chèque-cadeau
 

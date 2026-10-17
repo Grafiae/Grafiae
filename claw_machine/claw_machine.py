@@ -39,6 +39,8 @@ N_BALLS = 12                # boules de Noël
 N_JARS = 5                  # bougies de Noël en céramique avec couvercle
 N_CANES = 6                 # sucres d'orge
 FAIRY_LIGHTS = True         # guirlande lumineuse (bokeh chaud)
+BACKDROP_TOP = (0.93, 0.78, 0.6)      # fond : crème chaud en haut…
+BACKDROP_GLOW = (1.0, 0.62, 0.3)      # …halo doré derrière la pile
 FRONT_GLASS = True          # vitre devant la caméra (reflets en plus, rendu plus long)
 
 RES_X, RES_Y = 1080, 1350   # format 4:5
@@ -368,16 +370,39 @@ def emission_mix_mat(name, color, strength):
     return mat
 
 
+def warm_backdrop_mat(name):
+    """Fond chaleureux : dégradé vertical d'un halo doré (bas) vers un crème doux (haut)."""
+    mat = emission_mix_mat(name, BACKDROP_TOP, 0.22)
+    nt = mat.node_tree
+    bsdf = bsdf_of(mat)
+    tc = nt.nodes.new("ShaderNodeTexCoord")
+    sep = nt.nodes.new("ShaderNodeSeparateXYZ")
+    nt.links.new(tc.outputs["Generated"], sep.inputs["Vector"])
+    ramp = nt.nodes.new("ShaderNodeValToRGB")
+    cr = ramp.color_ramp
+    cr.elements[0].position, cr.elements[0].color = 0.3, (*BACKDROP_GLOW, 1.0)
+    cr.elements[1].position, cr.elements[1].color = 1.0, (*BACKDROP_TOP, 1.0)
+    nt.links.new(sep.outputs["Z"], ramp.inputs["Fac"])
+    nt.links.new(ramp.outputs["Color"], bsdf.inputs["Base Color"])
+    nt.links.new(ramp.outputs["Color"], bsdf.inputs["Emission Color"])
+    strength = nt.nodes.new("ShaderNodeMapRange")
+    strength.inputs["To Min"].default_value = 0.26
+    strength.inputs["To Max"].default_value = 0.1
+    nt.links.new(sep.outputs["Z"], strength.inputs["Value"])
+    nt.links.new(strength.outputs["Result"], bsdf.inputs["Emission Strength"])
+    return mat
+
+
 def build_materials():
     M = {}
     M['chrome'] = new_mat("Chrome", (0.92, 0.92, 0.93), 0.06, 1.0)
     M['chrome_dark'] = new_mat("ChromeDark", (0.6, 0.6, 0.62), 0.12, 1.0)
     M['alu'] = new_mat("BrushedAlu", (0.78, 0.79, 0.8), 0.28, 1.0, Anisotropic=0.7)
     M['glass'] = new_mat("Glass", (1, 1, 1), 0.0, 0.0, IOR=1.5, Transmission_Weight=1.0)
-    M['backdrop'] = emission_mix_mat("Backdrop", (0.92, 0.89, 0.85), 0.2)
-    M['ceiling'] = emission_mix_mat("CeilingDiffuser", (0.95, 0.95, 0.96), 0.25)
+    M['backdrop'] = warm_backdrop_mat("Backdrop")
+    M['ceiling'] = emission_mix_mat("CeilingDiffuser", (1.0, 0.82, 0.6), 0.12)
     M['card'] = emission_mix_mat("ReflectCard", (1, 1, 1), 3.0)
-    M['floor'] = new_mat("FloorAcrylic", (0.85, 0.86, 0.87), 0.12, Coat_Weight=0.6)
+    M['floor'] = new_mat("FloorAcrylic", (0.88, 0.8, 0.7), 0.12, Coat_Weight=0.6)
     M['string'] = new_mat("RedString", (0.6, 0.02, 0.02), 0.5)
     add_bump(M['string'], 2000, 0.3)
     M['cable'] = new_mat("BlackRubber", (0.012, 0.012, 0.014), 0.42)
@@ -864,12 +889,13 @@ def build_lighting(M):
     coll = new_collection("Lighting")
     # Grande boîte à lumière au-dessus, légèrement devant (lumière principale douce)
     area_light("Key_Softbox", (1.6, 1.0), 140, (0, -0.8, 1.7), (math.radians(-30), 0, 0),
-               (1.0, 0.9, 0.78), coll=coll)
+               (1.0, 0.84, 0.66), coll=coll)
     # Débouchage frontal gauche
     area_light("Fill_Left", (0.8, 1.4), 45, (-1.2, -1.4, 0.6),
-               (math.radians(80), 0, math.radians(-42)), (0.95, 0.97, 1.0), coll=coll)
+               (math.radians(80), 0, math.radians(-42)), (1.0, 0.9, 0.78), coll=coll)
     # Plafond lumineux de la vitrine
-    area_light("Ceiling_Panel", (CAB_W * 0.9, CAB_D * 0.9), 25, (0, 0, CAB_H - 0.03), (0, 0, 0), coll=coll)
+    area_light("Ceiling_Panel", (CAB_W * 0.9, CAB_D * 0.9), 25, (0, 0, CAB_H - 0.03), (0, 0, 0),
+               (1.0, 0.85, 0.65), coll=coll)
     # Lumière rasante arrière pour détacher la pince du fond
     area_light("Rim_Back", (0.6, 0.3), 40, (0.25, 0.5, 0.95), (math.radians(-140), 0, math.radians(20)), coll=coll)
 
@@ -887,7 +913,7 @@ def build_lighting(M):
     world = bpy.data.worlds.new("StudioWorld")
     world.use_nodes = True
     bg = world.node_tree.nodes["Background"]
-    bg.inputs["Color"].default_value = (0.9, 0.85, 0.78, 1.0)
+    bg.inputs["Color"].default_value = (0.95, 0.8, 0.62, 1.0)
     bg.inputs["Strength"].default_value = 0.25
     bpy.context.scene.world = world
 
