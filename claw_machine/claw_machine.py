@@ -3,13 +3,15 @@ Claw Machine de Noël — "la pince qui pêche un chèque-cadeau"
 ==================================================================
 
 Script Blender (4.2+ / 5.x) qui construit TOUTE la scène de façon procédurale :
-  - vitrine de machine à pince (verre, cadre alu brossé, fond blanc rétro-éclairé)
-  - pince chromée (corps, 3 griffes articulées, fil rouge, câble spiralé noir)
-  - pile de cadeaux emballés (papiers à motifs, rubans, nœuds) + quelques
-    boules et pots en céramique, posés par simulation physique (rigid body)
+  - borne d'arcade vert bouteille laquée : vitrine, néons sur les arêtes avant,
+    fronton lumineux, pupitre (joystick, bouton, monnayeur), portes, roulettes
+  - pince chromée (corps, 3 griffes articulées, fil rouge, câble spiralé noir, chariot)
+  - pile de cadeaux de Noël (papiers à motifs, rubans, nœuds, boules, bougies,
+    sucres d'orge), posés par simulation physique (rigid body)
   - un chèque-cadeau recto/verso (textures/cheque_*.png), que la pince va chercher
-  - éclairage studio doux façon photo produit, caméra 4:5 avec profondeur de champ
-  - animation complète : approche, descente, fermeture, remontée avec le chèque-cadeau
+  - salon d'hôtel : parquet, boiseries moulurées, appliques en laiton, tapis rouge
+  - animation : la caméra part d'un plan large et zoome vers la pince pendant
+    qu'elle descend, pince le chèque-cadeau et remonte
 
 Utilisation
 -----------
@@ -34,22 +36,26 @@ from mathutils import Euler, Matrix, Vector
 # PARAMÈTRES
 # ---------------------------------------------------------------------------
 SEED = 7                    # change la disposition / les couleurs des cadeaux
-N_GIFTS = 40                # boîtes cadeaux emballées
-N_BALLS = 12                # boules de Noël
-N_JARS = 5                  # bougies de Noël en céramique avec couvercle
-N_CANES = 6                 # sucres d'orge
-FAIRY_LIGHTS = True         # guirlande lumineuse (bokeh chaud)
-BACKDROP_TOP = (0.93, 0.78, 0.6)      # fond : crème chaud en haut…
-BACKDROP_GLOW = (1.0, 0.62, 0.3)      # …halo doré derrière la pile
+N_GIFTS = 56                # boîtes cadeaux emballées
+N_BALLS = 16                # boules de Noël
+N_JARS = 6                  # bougies de Noël en céramique avec couvercle
+N_CANES = 8                 # sucres d'orge
+FAIRY_LIGHTS = True         # guirlande lumineuse au fond de la vitrine (bokeh chaud)
 FRONT_GLASS = True          # vitre devant la caméra (reflets en plus, rendu plus long)
+
+MACHINE_GREEN = (0.004, 0.05, 0.022)   # laque vert bouteille de la borne
+NEON_COLOR = (0.25, 1.0, 0.45)         # néons des arêtes avant
+NEON_STRENGTH = 7.0
+MARQUEE_TEXT = "LE RENARD"             # enseigne lumineuse du fronton
+BASE_H = 0.88                          # hauteur du meuble bas (sol de la pièce à z = -BASE_H)
 
 RES_X, RES_Y = 1080, 1350   # format 4:5
 FPS = 24
-FRAME_END = 168             # 7 s
+FRAME_END = 192             # 8 s
 SAMPLES = 256               # échantillons Cycles pour le rendu final
 USE_GPU = True
 
-CAB_W, CAB_D, CAB_H = 0.62, 0.50, 0.80   # dimensions intérieures de la vitrine (m)
+CAB_W, CAB_D, CAB_H = 0.72, 0.60, 0.80   # volume vitré intérieur (m)   # dimensions intérieures de la vitrine (m)
 CARD_SIZE = (0.105, 0.0012, 0.159)      # chèque-cadeau (proportions du visuel 895x1356)
 CARD_CORNER = 0.0045                    # rayon des coins arrondis
 CARD_XY = (0.02, -0.07)                 # position du chèque-cadeau dans la pile
@@ -370,39 +376,23 @@ def emission_mix_mat(name, color, strength):
     return mat
 
 
-def warm_backdrop_mat(name):
-    """Fond chaleureux : dégradé vertical d'un halo doré (bas) vers un crème doux (haut)."""
-    mat = emission_mix_mat(name, BACKDROP_TOP, 0.22)
-    nt = mat.node_tree
-    bsdf = bsdf_of(mat)
-    tc = nt.nodes.new("ShaderNodeTexCoord")
-    sep = nt.nodes.new("ShaderNodeSeparateXYZ")
-    nt.links.new(tc.outputs["Generated"], sep.inputs["Vector"])
-    ramp = nt.nodes.new("ShaderNodeValToRGB")
-    cr = ramp.color_ramp
-    cr.elements[0].position, cr.elements[0].color = 0.3, (*BACKDROP_GLOW, 1.0)
-    cr.elements[1].position, cr.elements[1].color = 1.0, (*BACKDROP_TOP, 1.0)
-    nt.links.new(sep.outputs["Z"], ramp.inputs["Fac"])
-    nt.links.new(ramp.outputs["Color"], bsdf.inputs["Base Color"])
-    nt.links.new(ramp.outputs["Color"], bsdf.inputs["Emission Color"])
-    strength = nt.nodes.new("ShaderNodeMapRange")
-    strength.inputs["To Min"].default_value = 0.26
-    strength.inputs["To Max"].default_value = 0.1
-    nt.links.new(sep.outputs["Z"], strength.inputs["Value"])
-    nt.links.new(strength.outputs["Result"], bsdf.inputs["Emission Strength"])
-    return mat
-
-
 def build_materials():
     M = {}
     M['chrome'] = new_mat("Chrome", (0.92, 0.92, 0.93), 0.06, 1.0)
     M['chrome_dark'] = new_mat("ChromeDark", (0.6, 0.6, 0.62), 0.12, 1.0)
     M['alu'] = new_mat("BrushedAlu", (0.78, 0.79, 0.8), 0.28, 1.0, Anisotropic=0.7)
     M['glass'] = new_mat("Glass", (1, 1, 1), 0.0, 0.0, IOR=1.5, Transmission_Weight=1.0)
-    M['backdrop'] = warm_backdrop_mat("Backdrop")
-    M['ceiling'] = emission_mix_mat("CeilingDiffuser", (1.0, 0.82, 0.6), 0.12)
+    M['paint'] = new_mat("BottleGreenLacquer", MACHINE_GREEN, 0.22, Coat_Weight=0.8, Coat_Roughness=0.04)
+    M['paint_inner'] = new_mat("BottleGreenInner", MACHINE_GREEN, 0.35, Coat_Weight=0.4)
+    M['cream'] = new_mat("CreamEnamel", (0.85, 0.78, 0.64), 0.3, Coat_Weight=0.5)
+    M['neon'] = emission_mix_mat("NeonGreen", NEON_COLOR, NEON_STRENGTH)
+    M['letters'] = emission_mix_mat("MarqueeLetters", (0.95, 0.88, 0.74), 1.2)
+    M['ceiling'] = emission_mix_mat("CeilingLightBox", (1.0, 0.9, 0.76), 1.5)
+    M['rubber'] = new_mat("BlackRubberMatte", (0.02, 0.02, 0.02), 0.7)
+    M['slot'] = new_mat("CoinSlotBlack", (0.005, 0.005, 0.005), 0.5)
+    M['joy_ball'] = new_mat("JoystickBall", (0.6, 0.01, 0.02), 0.12, Coat_Weight=1.0)
+    M['brass'] = new_mat("Brass", (0.8, 0.58, 0.3), 0.3, 1.0)
     M['card'] = emission_mix_mat("ReflectCard", (1, 1, 1), 3.0)
-    M['floor'] = new_mat("FloorAcrylic", (0.88, 0.8, 0.7), 0.12, Coat_Weight=0.6)
     M['string'] = new_mat("RedString", (0.6, 0.02, 0.02), 0.5)
     add_bump(M['string'], 2000, 0.3)
     M['cable'] = new_mat("BlackRubber", (0.012, 0.012, 0.014), 0.42)
@@ -465,18 +455,33 @@ def build_materials():
 
 
 # ---------------------------------------------------------------------------
-# VITRINE
+# BORNE D'ARCADE (vitrine + meuble + fronton)
 # ---------------------------------------------------------------------------
+POST = 0.05
+OUT_W, OUT_D = CAB_W + 2 * POST, CAB_D + 2 * POST
+FLOOR_Z = -BASE_H
+MARQUEE_H = 0.27
+
+
+def panel_frame(name, w, h, loc, depth, mat, coll, bar=0.022):
+    """Cadre en relief (moulure) dans le plan XZ, posé devant une face orientée -Y."""
+    x, y, z = loc
+    parts = [((w, depth, bar), (x, y, z + h / 2 - bar / 2)), ((w, depth, bar), (x, y, z - h / 2 + bar / 2)),
+             ((bar, depth, h), (x - w / 2 + bar / 2, y, z)), ((bar, depth, h), (x + w / 2 - bar / 2, y, z))]
+    return [box(f"{name}_{k}", size, l, mat=mat, bevel=min(depth, bar) * 0.3, coll=coll)
+            for k, (size, l) in enumerate(parts)]
 
 
 def build_cabinet(M):
-    coll = new_collection("Cabinet")
+    coll = new_collection("ClawMachine")
     w, d, h, t = CAB_W, CAB_D, CAB_H, 0.008
     colliders = []
-    colliders.append(box("Floor", (w + 0.1, d + 0.1, 0.04), (0, 0, -0.02), mat=M['floor'], coll=coll))
-    box("Backdrop", (w, t, h), (0, d / 2 + t / 2, h / 2), mat=M['backdrop'], coll=coll)
-    colliders.append(bpy.data.objects["Backdrop"])
-    box("Ceiling", (w, d, 0.01), (0, 0, h + 0.005), mat=M['ceiling'], coll=coll)
+    paint = M['paint']
+
+    # --- Volume de jeu (vitrine)
+    colliders.append(box("PlayFloor", (w, d, 0.04), (0, 0, -0.02), mat=M['paint_inner'], coll=coll))
+    colliders.append(box("BackPanel", (w, t, h), (0, d / 2 + t / 2, h / 2), mat=M['paint_inner'], coll=coll))
+    box("CeilingLightBox", (w, d, 0.01), (0, 0, h + 0.005), mat=M['ceiling'], coll=coll)
     for sx in (-1, 1):
         colliders.append(box(f"GlassSide_{'L' if sx < 0 else 'R'}", (t, d, h),
                              (sx * (w / 2 + t / 2), 0, h / 2), mat=M['glass'], coll=coll))
@@ -484,22 +489,196 @@ def build_cabinet(M):
     colliders.append(front)
     if not FRONT_GLASS:
         front.hide_render = True
+    # Rebord crème devant la vitre (comme la tablette de la référence)
+    box("FrontLedge", (w + 0.02, 0.07, 0.025), (0, -d / 2 - 0.03, 0.0), mat=M['cream'], bevel=0.004, coll=coll)
 
-    # Cadre en aluminium brossé (montants + traverses), comme sur les références.
-    p = 0.03
+    # --- Montants laqués + néons sur les arêtes avant
     for sx in (-1, 1):
         for sy in (-1, 1):
-            box(f"Post_{sx}_{sy}", (p, p, h + 0.06),
-                (sx * (w / 2 + p / 2), sy * (d / 2 + p / 2), h / 2), mat=M['alu'], bevel=0.002, coll=coll)
-    for sy in (-1, 1):
-        box(f"TopRail_X_{sy}", (w + 2 * p, p, 0.07), (0, sy * (d / 2 + p / 2), h + 0.035),
-            mat=M['alu'], bevel=0.002, coll=coll)
+            box(f"Post_{sx}_{sy}", (POST, POST, h + 0.02),
+                (sx * (w / 2 + POST / 2), sy * (d / 2 + POST / 2), h / 2), mat=paint, bevel=0.004, coll=coll)
+        neon_h = h + BASE_H - 0.1
+        neon = box(f"Neon_{sx}", (0.012, 0.012, neon_h),
+                   (sx * (OUT_W / 2 + 0.003), -OUT_D / 2 - 0.003, FLOOR_Z + 0.08 + neon_h / 2),
+                   mat=M['neon'], bevel=0.004, coll=coll)
+        neon.visible_shadow = False
+
+    # --- Fronton (enseigne)
+    box("Marquee", (OUT_W + 0.02, OUT_D + 0.02, MARQUEE_H), (0, 0, h + MARQUEE_H / 2),
+        mat=paint, bevel=0.006, coll=coll)
+    box("MarqueeLip", (OUT_W + 0.03, OUT_D + 0.03, 0.02), (0, 0, h + 0.01), mat=paint, bevel=0.004, coll=coll)
+    cu = bpy.data.curves.new("MarqueeText", 'FONT')
+    cu.body = MARQUEE_TEXT
+    cu.align_x, cu.align_y = 'CENTER', 'CENTER'
+    cu.size = 0.095
+    cu.space_character = 1.45
+    cu.extrude = 0.006
+    cu.bevel_depth = 0.001
+    txt = link(bpy.data.objects.new("MarqueeText", cu), coll)
+    txt.data.materials.append(M['letters'])
+    txt.location = (0, -OUT_D / 2 - 0.012, h + MARQUEE_H / 2 + 0.01)
+    txt.rotation_euler = (math.radians(90), 0, 0)
+    # Lumière douce de l'enseigne sur le haut de la vitre
+    ld = bpy.data.lights.new("MarqueeGlow", 'AREA')
+    ld.size, ld.energy, ld.color = 0.6, 6, (1.0, 0.9, 0.75)
+    glow = link(bpy.data.objects.new("MarqueeGlow", ld), coll)
+    glow.location = (0, -OUT_D / 2 - 0.05, h + MARQUEE_H / 2)
+    glow.rotation_euler = (math.radians(90), 0, 0)
+
+    # --- Meuble bas
+    plinth = 0.07
+    body_h = BASE_H - plinth
+    box("BaseBody", (OUT_W, OUT_D, body_h), (0, 0, FLOOR_Z + plinth + body_h / 2), mat=paint, bevel=0.006, coll=coll)
+    box("BasePlinth", (OUT_W - 0.04, OUT_D - 0.04, plinth), (0, 0, FLOOR_Z + plinth / 2), mat=M['slot'], coll=coll)
+    fy = -OUT_D / 2 - 0.004
     for sx in (-1, 1):
-        box(f"TopRail_Y_{sx}", (p, d, 0.07), (sx * (w / 2 + p / 2), 0, h + 0.035),
-            mat=M['alu'], bevel=0.002, coll=coll)
-    # Rail du chariot de la pince sous le plafond.
-    box("GantryRail", (w, 0.025, 0.02), (0, 0.0, h - 0.012), mat=M['alu'], bevel=0.002, coll=coll)
+        dx = sx * (OUT_W / 2 - 0.17)
+        panel_frame(f"BaseDoor_{sx}", 0.24, 0.42, (dx, fy, FLOOR_Z + plinth + 0.3), 0.008, paint, coll)
+        cylinder(f"DoorLock_{sx}", 0.008, 0.012, (dx, fy - 0.004, FLOOR_Z + plinth + 0.47),
+                 (math.radians(90), 0, 0), mat=M['chrome'], coll=coll)
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            c = cylinder(f"Caster_{sx}_{sy}", 0.03, 0.022, (sx * (OUT_W / 2 - 0.08), sy * (OUT_D / 2 - 0.08),
+                         FLOOR_Z + 0.03), (0, math.radians(90), 0), mat=M['rubber'], coll=coll)
+            cylinder(f"CasterHub_{sx}_{sy}", 0.012, 0.026, c.location, c.rotation_euler, mat=M['chrome'], coll=coll)
+
+    # --- Pupitre de commande (joystick, bouton, monnayeur)
+    cw, cd_, ch = 0.26, 0.17, 0.5
+    cz = 0.06 - ch / 2
+    cy = -OUT_D / 2 - cd_ / 2 + 0.01
+    box("ControlBox", (cw, cd_, ch), (0, cy, cz), mat=paint, bevel=0.006, coll=coll)
+    box("ControlTop", (cw + 0.012, cd_ + 0.012, 0.018), (0, cy, 0.06), mat=M['cream'], bevel=0.004, coll=coll)
+    box("ControlLower", (cw - 0.04, cd_ - 0.03, 0.2), (0, cy + 0.01, cz - ch / 2 - 0.1), mat=paint,
+        bevel=0.005, coll=coll)
+    for sx in (-1, 1):
+        neon = box(f"ControlNeon_{sx}", (0.01, 0.01, ch), (sx * (cw / 2 + 0.002), cy - cd_ / 2 - 0.002, cz),
+                   mat=M['neon'], bevel=0.003, coll=coll)
+        neon.visible_shadow = False
+    cylinder("JoystickBase", 0.022, 0.008, (-0.05, cy, 0.073), mat=M['chrome'], coll=coll)
+    cylinder("JoystickShaft", 0.005, 0.075, (-0.05, cy, 0.11), mat=M['chrome'], coll=coll)
+    sphere("JoystickBall", 0.019, (-0.05, cy, 0.152), M['joy_ball'], coll)
+    cylinder("Button", 0.022, 0.014, (0.06, cy, 0.075), mat=M['cream'], bevel=0.005, coll=coll)
+    plate_y = cy - cd_ / 2 - 0.003
+    box("CoinPlate", (0.06, 0.006, 0.11), (0, plate_y, cz + 0.08), mat=M['chrome'], bevel=0.002, coll=coll)
+    box("CoinSlot", (0.004, 0.004, 0.035), (0, plate_y - 0.003, cz + 0.1), mat=M['slot'], coll=coll)
+    box("CoinReturn", (0.03, 0.004, 0.02), (0, plate_y - 0.003, cz + 0.05), mat=M['slot'], coll=coll)
+    panel_frame("ControlDoor", 0.16, 0.13, (0, plate_y + 0.001, cz - 0.1), 0.006, paint, coll, bar=0.016)
+
+    # --- Portique du chariot sous le plafond
+    for sy in (-1, 1):
+        cylinder(f"GantryRail_{sy}", 0.006, w, (0, sy * (d / 2 - 0.04), h - 0.03),
+                 (0, math.radians(90), 0), mat=M['chrome'], coll=coll)
     return coll, colliders
+
+
+def build_gantry(M, rig):
+    """Chariot + traverse qui suivent la pince en X/Y sous le plafond."""
+    coll = bpy.data.collections["ClawMachine"]
+    cross = cylinder("GantryCross", 0.008, CAB_D - 0.06, (0, 0, CAB_H - 0.03),
+                     (math.radians(90), 0, 0), mat=M['chrome'], coll=coll)
+    c = cross.constraints.new('COPY_LOCATION')
+    c.target, c.use_y, c.use_z = rig, False, False
+    carriage = box("GantryCarriage", (0.07, 0.06, 0.04), (0, 0, CAB_H - 0.045), mat=M['chrome_dark'],
+                   bevel=0.004, coll=coll)
+    c = carriage.constraints.new('COPY_LOCATION')
+    c.target, c.use_z = rig, False
+
+
+# ---------------------------------------------------------------------------
+# PIÈCE D'HÔTEL
+# ---------------------------------------------------------------------------
+
+
+def parquet_mat():
+    mat = new_mat("OakParquet", (0.3, 0.16, 0.07), 0.32, Coat_Weight=0.35, Coat_Roughness=0.15)
+    nt = mat.node_tree
+    tc = nt.nodes.new("ShaderNodeTexCoord")
+    brick = nt.nodes.new("ShaderNodeTexBrick")
+    brick.offset = 0.5
+    brick.inputs["Color1"].default_value = (0.36, 0.19, 0.08, 1)
+    brick.inputs["Color2"].default_value = (0.22, 0.11, 0.045, 1)
+    brick.inputs["Mortar"].default_value = (0.06, 0.03, 0.015, 1)
+    brick.inputs["Scale"].default_value = 1.0
+    brick.inputs["Mortar Size"].default_value = 0.0015
+    brick.inputs["Brick Width"].default_value = 0.9
+    brick.inputs["Row Height"].default_value = 0.13
+    nt.links.new(tc.outputs["Object"], brick.inputs["Vector"])
+    grain = nt.nodes.new("ShaderNodeTexNoise")
+    grain.inputs["Scale"].default_value = 3.0
+    grain.inputs["Detail"].default_value = 10.0
+    mapping = nt.nodes.new("ShaderNodeMapping")
+    mapping.inputs["Scale"].default_value = (1.0, 40.0, 1.0)
+    nt.links.new(tc.outputs["Object"], mapping.inputs["Vector"])
+    nt.links.new(mapping.outputs["Vector"], grain.inputs["Vector"])
+    mix = nt.nodes.new("ShaderNodeMath")
+    mix.operation = 'MULTIPLY'
+    nt.links.new(brick.outputs["Fac"], mix.inputs[0])
+    nt.links.new(grain.outputs["Fac"], mix.inputs[1])
+    tint = nt.nodes.new("ShaderNodeHueSaturation")
+    tint.inputs["Value"].default_value = 1.0
+    nt.links.new(brick.outputs["Color"], tint.inputs["Color"])
+    nt.links.new(grain.outputs["Fac"], tint.inputs["Fac"])
+    nt.links.new(tint.outputs["Color"], bsdf_of(mat).inputs["Base Color"])
+    bump = nt.nodes.new("ShaderNodeBump")
+    bump.inputs["Strength"].default_value = 0.15
+    nt.links.new(brick.outputs["Fac"], bump.inputs["Height"])
+    nt.links.new(bump.outputs["Normal"], bsdf_of(mat).inputs["Normal"])
+    return mat
+
+
+def build_room(M):
+    coll = new_collection("HotelRoom")
+    wall_y = OUT_D / 2 + 0.3
+    wall_mat = new_mat("WallPaint", (0.42, 0.33, 0.24), 0.75)
+    trim = new_mat("WallTrim", (0.46, 0.37, 0.27), 0.4, Coat_Weight=0.3)
+    rug = new_mat("RedVelvetRug", (0.3, 0.006, 0.012), 0.85, Sheen_Weight=0.5, Sheen_Roughness=0.4,
+                  Sheen_Tint=(1.0, 0.25, 0.25, 1.0))
+    add_bump(rug, 900, 0.3)
+
+    box("RoomFloor", (7, 7, 0.02), (0, -1.5, FLOOR_Z - 0.01), mat=parquet_mat(), coll=coll)
+    box("BackWall", (7, 0.05, 3.2), (0, wall_y + 0.025, FLOOR_Z + 1.6), mat=wall_mat, coll=coll)
+    for sx in (-1, 1):
+        box(f"SideWall_{sx}", (0.05, 7, 3.2), (sx * 3.2, -1.5, FLOOR_Z + 1.6), mat=wall_mat, coll=coll)
+    box("RoomCeiling", (7, 7, 0.05), (0, -1.5, FLOOR_Z + 3.2), mat=wall_mat, coll=coll)
+
+    # Boiseries : plinthe, cimaise, cadres moulurés bas et hauts
+    fy = wall_y - 0.01
+    box("Baseboard", (7, 0.02, 0.14), (0, fy, FLOOR_Z + 0.07), mat=trim, bevel=0.004, coll=coll)
+    box("ChairRail", (7, 0.03, 0.045), (0, fy - 0.005, FLOOR_Z + 0.98), mat=trim, bevel=0.008, coll=coll)
+    box("Cornice", (7, 0.06, 0.09), (0, fy - 0.02, FLOOR_Z + 3.12), mat=trim, bevel=0.01, coll=coll)
+    for k in range(-4, 5):
+        x = k * 0.75
+        if abs(x) < 0.5:
+            continue
+        panel_frame(f"WainscotLow_{k}", 0.6, 0.64, (x, fy, FLOOR_Z + 0.55), 0.015, trim, coll)
+        panel_frame(f"WainscotHigh_{k}", 0.6, 1.55, (x, fy, FLOOR_Z + 1.95), 0.015, trim, coll)
+
+    # Appliques murales en laiton avec abat-jour chaud
+    shade = emission_mix_mat("LampShade", (1.0, 0.78, 0.5), 3.0)
+    for sx in (-1, 1):
+        x, z = sx * 1.05, FLOOR_Z + 1.75
+        cylinder(f"SconcePlate_{sx}", 0.045, 0.012, (x, fy - 0.006, z - 0.12), (math.radians(90), 0, 0),
+                 mat=M['brass'], coll=coll)
+        curve_obj(f"SconceArm_{sx}", [(x, fy - 0.01, z - 0.12), (x, fy - 0.12, z - 0.1), (x, fy - 0.14, z - 0.02)],
+                  0.007, mat=M['brass'], coll=coll)
+        mesh = bpy.data.meshes.new(f"SconceShade_{sx}")
+        bm = bmesh.new()
+        bmesh.ops.create_cone(bm, cap_ends=False, segments=48, radius1=0.1, radius2=0.065, depth=0.16)
+        bm.to_mesh(mesh)
+        bm.free()
+        sh = link(bpy.data.objects.new(f"SconceShade_{sx}", mesh), coll)
+        sh.data.materials.append(shade)
+        sh.location = (x, fy - 0.14, z + 0.06)
+        smooth(sh)
+        sol = sh.modifiers.new("Thickness", 'SOLIDIFY')
+        sol.thickness = 0.003
+        ld = bpy.data.lights.new(f"SconceLight_{sx}", 'POINT')
+        ld.energy, ld.color, ld.shadow_soft_size = 40, (1.0, 0.7, 0.42), 0.04
+        link(bpy.data.objects.new(f"SconceLight_{sx}", ld), coll).location = (x, fy - 0.14, z + 0.05)
+
+    # Tapis rouge velours devant la borne
+    box("RedRunner", (1.05, 3.2, 0.012), (0, -OUT_D / 2 - 1.5, FLOOR_Z + 0.006), mat=rug, bevel=0.004, coll=coll)
+    return coll
 
 
 # ---------------------------------------------------------------------------
@@ -538,7 +717,7 @@ def build_claw(M):
     parent(cable_attach, rig)
 
     # Fil de levage rouge
-    string = cylinder("Claw_String", 0.0011, 2.0, (0, 0, 0.106 + 1.0), mat=M['string'], verts=12, coll=coll)
+    string = cylinder("Claw_String", 0.0011, 0.3, (0, 0, 0.106 + 0.15), mat=M['string'], verts=12, coll=coll)
     parent(string, rig)
 
     # Les 3 griffes : chaque charnière (empty) tourne autour de son axe X local.
@@ -887,54 +1066,70 @@ def area_light(name, size, energy, loc, rot, color=(1, 1, 1), visible_glossy=Tru
 
 def build_lighting(M):
     coll = new_collection("Lighting")
-    # Grande boîte à lumière au-dessus, légèrement devant (lumière principale douce)
-    area_light("Key_Softbox", (1.6, 1.0), 140, (0, -0.8, 1.7), (math.radians(-30), 0, 0),
-               (1.0, 0.84, 0.66), coll=coll)
-    # Débouchage frontal gauche
-    area_light("Fill_Left", (0.8, 1.4), 45, (-1.2, -1.4, 0.6),
-               (math.radians(80), 0, math.radians(-42)), (1.0, 0.9, 0.78), coll=coll)
-    # Plafond lumineux de la vitrine
-    area_light("Ceiling_Panel", (CAB_W * 0.9, CAB_D * 0.9), 25, (0, 0, CAB_H - 0.03), (0, 0, 0),
-               (1.0, 0.85, 0.65), coll=coll)
-    # Lumière rasante arrière pour détacher la pince du fond
-    area_light("Rim_Back", (0.6, 0.3), 40, (0.25, 0.5, 0.95), (math.radians(-140), 0, math.radians(20)), coll=coll)
+    # Caisson lumineux du plafond de la vitrine (lumière principale du jeu)
+    area_light("Ceiling_Panel", (CAB_W * 0.9, CAB_D * 0.9), 35, (0, 0, CAB_H - 0.03), (0, 0, 0),
+               (1.0, 0.88, 0.72), coll=coll)
+    # Douce lumière de face (fenêtre hors champ, à gauche)
+    area_light("Window_Key", (1.2, 1.8), 60, (-1.6, -2.4, 0.6),
+               (math.radians(78), 0, math.radians(-35)), (1.0, 0.86, 0.7), coll=coll)
+    # Tache de soleil chaude sur le tapis et le meuble (comme sur la référence)
+    sd = bpy.data.lights.new("SunPatch", 'SPOT')
+    sd.energy, sd.color = 450, (1.0, 0.72, 0.45)
+    sd.spot_size, sd.spot_blend, sd.shadow_soft_size = math.radians(22), 0.25, 0.05
+    sun = link(bpy.data.objects.new("SunPatch", sd), coll)
+    sun.location = (-1.8, -2.6, FLOOR_Z + 2.9)
+    aim = empty("SunPatch_Target", (0.1, -0.9, FLOOR_Z + 0.2), coll=coll)
+    tt = sun.constraints.new('TRACK_TO')
+    tt.target, tt.track_axis, tt.up_axis = aim, 'TRACK_NEGATIVE_Z', 'UP_Y'
+    # Contre-jour discret pour détacher la pince du fond vert
+    area_light("Rim_Back", (0.5, 0.25), 25, (0.25, 0.25, 0.75), (math.radians(-140), 0, math.radians(20)),
+               (1.0, 0.9, 0.8), coll=coll)
 
-    # Cartes réfléchissantes invisibles à la caméra : longues lignes blanches dans le chrome
+    # Cartes réfléchissantes invisibles à la caméra : longues lignes claires dans le chrome
     for sx in (-1, 1):
         card = box(f"ReflectCard_{sx}", (0.02, 0.4, 2.0), (sx * 0.8, -0.9, 0.6),
                    (0, 0, math.radians(sx * 35)), mat=M['card'], coll=coll)
         card.visible_camera = False
         card.visible_shadow = False
-    dark = new_mat("DarkFlag", (0.01, 0.01, 0.01), 0.9)
-    flag = box("ReflectFlag_Dark", (0.8, 0.02, 1.4), (0.35, -1.6, 0.5), mat=dark, coll=coll)
-    flag.visible_camera = False
-    flag.visible_shadow = False
 
-    world = bpy.data.worlds.new("StudioWorld")
+    world = bpy.data.worlds.new("HotelWorld")
     world.use_nodes = True
     bg = world.node_tree.nodes["Background"]
-    bg.inputs["Color"].default_value = (0.95, 0.8, 0.62, 1.0)
-    bg.inputs["Strength"].default_value = 0.25
+    bg.inputs["Color"].default_value = (0.9, 0.7, 0.5, 1.0)
+    bg.inputs["Strength"].default_value = 0.04
     bpy.context.scene.world = world
 
 
 def build_camera(focus_obj):
     coll = new_collection("Camera")
     cam_data = bpy.data.cameras.new("Camera")
-    cam_data.lens = 85
+    cam_data.lens = 45
     cam_data.sensor_width = 36
     cam_data.dof.use_dof = True
     cam_data.dof.focus_object = focus_obj
     cam_data.dof.aperture_fstop = 2.8
     cam = link(bpy.data.objects.new("Camera", cam_data), coll)
-    cam.location = (0.0, -1.95, 0.44)
-    target = empty("Camera_Target", (0.0, 0.0, 0.41), coll=coll)
+    cam.location = CAM_WIDE[0]
+    target = empty("Camera_Target", CAM_WIDE[1], coll=coll)
     tt = cam.constraints.new('TRACK_TO')
     tt.target = target
     tt.track_axis = 'TRACK_NEGATIVE_Z'
     tt.up_axis = 'UP_Y'
     bpy.context.scene.camera = cam
-    return cam
+    return cam, target
+
+
+# Plan large (position caméra, cible, focale) -> plan serré sur la pince
+CAM_WIDE = ((0.0, -3.6, 0.05), (0.0, 0.0, 0.08), 42)
+CAM_CLOSE = ((0.02, -1.25, 0.5), (0.02, -0.07, 0.47), 85)
+
+
+def animate_camera(cam, target, f_start, f_end):
+    for f, (loc, aim, lens) in ((f_start, CAM_WIDE), (f_end, CAM_CLOSE)):
+        key_loc(cam, f, loc)
+        key_loc(target, f, aim)
+        cam.data.lens = lens
+        cam.data.keyframe_insert("lens", frame=f)
 
 
 def setup_render(scene):
@@ -962,7 +1157,7 @@ def setup_render(scene):
             break
         except TypeError:
             pass
-    scene.view_settings.exposure = -0.2
+    scene.view_settings.exposure = -0.8
 
     if USE_GPU:
         try:
@@ -1010,8 +1205,8 @@ def animate(rig, hinges, env):
     top_z = 0.62
     start = (-0.16, ey, top_z)
 
-    F = dict(start=1, arrive=34, settle=42, open_done=48, bottom=78, closed=92,
-             grab=90, lift_start=98, top=140, end=FRAME_END)
+    F = dict(start=1, arrive=40, settle=48, open_done=54, bottom=86, closed=100,
+             grab=98, lift_start=106, top=150, end=FRAME_END)
 
     # Trajectoire du chariot
     key_loc(rig, F['start'], start)
@@ -1073,6 +1268,8 @@ def main():
     claw_coll, rig, hinges, cable_attach = build_claw(M)
     rig.location = (-0.16, CARD_XY[1], 0.62)
     build_cable(M, rig, cable_attach, claw_coll)
+    build_gantry(M, rig)
+    build_room(M)
 
     _, gifts = build_pile(M, colliders)
     base = max(0.0, pile_height_near(gifts, *CARD_XY) - CARD_SIZE[2] * 0.62)
@@ -1081,9 +1278,10 @@ def main():
     if FAIRY_LIGHTS:
         build_fairy_lights(M)
     build_lighting(M)
-    build_camera(env)
+    cam, cam_target = build_camera(env)
     setup_render(scene)
-    animate(rig, hinges, env)
+    F = animate(rig, hinges, env)
+    animate_camera(cam, cam_target, 1, F['top'])
     scene.frame_set(1)
 
     if bpy.app.background:
