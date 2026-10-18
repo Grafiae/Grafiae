@@ -1,0 +1,7 @@
+HDRI (éclairage et reflets réalistes) — https://polyhaven.com/hdris
+====================================================================
+
+Télécharge une HDRI d'intérieur (catégorie "Indoor", par ex. un hall, un couloir ou
+un studio chaleureux) en 2K ou 4K, format .hdr ou .exr, et dépose le fichier ici.
+Le script l'utilise automatiquement comme environnement (reflets du chrome, de la
+laque et du verre, lumière d'ambiance). Réglages : HDRI_STRENGTH et HDRI_ROTATION.

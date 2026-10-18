@@ -29,6 +29,7 @@ Tous les réglages utiles sont dans la section PARAMÈTRES ci-dessous.
 import math
 import os
 import random
+import re
 
 import bpy
 import bmesh
@@ -695,6 +696,146 @@ def parquet_mat():
     return mat
 
 
+# ---------------------------------------------------------------------------
+# TEXTURES PHOTO (optionnelles) : textures/pbr/<emplacement>/ et textures/hdri/
+# ---------------------------------------------------------------------------
+# Dépose dans chaque dossier un jeu de textures PBR (ex. téléchargé sur polyhaven.com,
+# format 2K, JPG ou PNG/EXR). Le script reconnaît les fichiers à leur nom :
+#   couleur : diff / diffuse / col / color / albedo / basecolor
+#   rugosité : rough        normale : nor_gl / normal     relief : disp / height
+#   arm (AO + rugosité + métal) : arm
+# Un dossier vide ou absent = on garde le matériau procédural.
+PBR_SLOTS = {
+    # emplacement : (taille réelle d'une répétition en m, teinte multipliée ou None, relief)
+    "carpet": (0.6, None, 0.004),
+    "facade": (1.2, None, 0.002),
+    "door": (1.0, None, 0.001),
+    "lobby_floor": (2.0, None, 0.003),
+    "interior_floor": (2.0, None, 0.002),
+}
+HDRI_STRENGTH = 0.35        # intensité de l'HDRI (textures/hdri/*.hdr|*.exr) si présente
+HDRI_ROTATION = 0.0         # rotation de l'HDRI en degrés
+
+_PBR_KEYS = {
+    "color": ("diff", "diffuse", "col", "color", "albedo", "basecolor"),
+    "rough": ("rough",),
+    "normal": ("nor_gl", "normal", "nrm"),
+    "disp": ("disp", "height"),
+    "arm": ("arm",),
+}
+_IMG_EXT = (".jpg", ".jpeg", ".png", ".exr", ".tif", ".tiff")
+
+
+def _find_maps(folder):
+    """Associe chaque fichier à un type de carte d'après les mots de son nom (diff, rough...)."""
+    found = {}
+    for f in sorted(os.listdir(folder)):
+        if not f.lower().endswith(_IMG_EXT):
+            continue
+        tokens = re.split(r"[_\-. ]+", os.path.splitext(f.lower())[0])
+        joined = ["_".join(p) for p in zip(tokens, tokens[1:])] + tokens
+        if "nor_dx" in joined:
+            continue
+        for kind, keys in _PBR_KEYS.items():
+            if any(k in joined for k in keys):
+                found.setdefault(kind, os.path.join(folder, f))
+                break
+    return found
+
+
+def pbr_mat(slot, fallback):
+    """Matériau à partir de vraies textures photo si présentes, sinon `fallback`."""
+    try:
+        folder = os.path.join(texture_dir(), "pbr", slot)
+    except FileNotFoundError:
+        return fallback
+    if not os.path.isdir(folder):
+        return fallback
+    maps = _find_maps(folder)
+    if "color" not in maps:
+        return fallback
+    size, tint, disp_amount = PBR_SLOTS[slot]
+    mat = new_mat(f"PBR_{slot}", (1, 1, 1), 0.5)
+    nt = mat.node_tree
+    bsdf = bsdf_of(mat)
+    tc = nt.nodes.new("ShaderNodeTexCoord")
+    mp = nt.nodes.new("ShaderNodeMapping")
+    mp.inputs["Scale"].default_value = (1 / size,) * 3
+    nt.links.new(tc.outputs["Object"], mp.inputs["Vector"])
+
+    def img_node(path, non_color):
+        node = nt.nodes.new("ShaderNodeTexImage")
+        node.image = bpy.data.images.load(path, check_existing=True)
+        if non_color:
+            node.image.colorspace_settings.name = "Non-Color"
+        node.projection = 'BOX'
+        node.projection_blend = 0.25
+        nt.links.new(mp.outputs["Vector"], node.inputs["Vector"])
+        return node
+
+    col = img_node(maps["color"], False)
+    color_out = col.outputs["Color"]
+    if tint:
+        mix = nt.nodes.new("ShaderNodeMix")
+        mix.data_type = 'RGBA'
+        mix.blend_type = 'MULTIPLY'
+        mix.inputs[0].default_value = 1.0
+        nt.links.new(color_out, mix.inputs[6])
+        mix.inputs[7].default_value = (*tint, 1.0)
+        color_out = mix.outputs[2]
+    nt.links.new(color_out, bsdf.inputs["Base Color"])
+    if "arm" in maps:
+        arm = img_node(maps["arm"], True)
+        sep = nt.nodes.new("ShaderNodeSeparateColor")
+        nt.links.new(arm.outputs["Color"], sep.inputs["Color"])
+        nt.links.new(sep.outputs[1], bsdf.inputs["Roughness"])
+        nt.links.new(sep.outputs[2], bsdf.inputs["Metallic"])
+    if "rough" in maps:
+        r = img_node(maps["rough"], True)
+        nt.links.new(r.outputs["Color"], bsdf.inputs["Roughness"])
+    if "normal" in maps:
+        n = img_node(maps["normal"], True)
+        nm = nt.nodes.new("ShaderNodeNormalMap")
+        nt.links.new(n.outputs["Color"], nm.inputs["Color"])
+        nt.links.new(nm.outputs["Normal"], bsdf.inputs["Normal"])
+    if "disp" in maps and disp_amount:
+        d = img_node(maps["disp"], True)
+        dn = nt.nodes.new("ShaderNodeDisplacement")
+        dn.inputs["Scale"].default_value = disp_amount
+        dn.inputs["Midlevel"].default_value = 0.5
+        nt.links.new(d.outputs["Color"], dn.inputs["Height"])
+        out = next(nd for nd in nt.nodes if nd.type == 'OUTPUT_MATERIAL')
+        nt.links.new(dn.outputs["Displacement"], out.inputs["Displacement"])
+    print(f"Textures photo utilisées pour '{slot}' : {', '.join(sorted(maps))}")
+    return mat
+
+
+def hdri_world(world):
+    """Remplace le fond uni par une HDRI (textures/hdri/) si présente."""
+    try:
+        folder = os.path.join(texture_dir(), "hdri")
+    except FileNotFoundError:
+        return False
+    if not os.path.isdir(folder):
+        return False
+    files = [f for f in sorted(os.listdir(folder)) if f.lower().endswith((".hdr", ".exr"))]
+    if not files:
+        return False
+    nt = world.node_tree
+    tc = nt.nodes.new("ShaderNodeTexCoord")
+    mp = nt.nodes.new("ShaderNodeMapping")
+    mp.inputs["Rotation"].default_value = (0, 0, math.radians(HDRI_ROTATION))
+    env = nt.nodes.new("ShaderNodeTexEnvironment")
+    env.image = bpy.data.images.load(os.path.join(folder, files[0]), check_existing=True)
+    bg = nt.nodes["Background"]
+    nt.links.new(tc.outputs["Generated"], mp.inputs["Vector"])
+    nt.links.new(mp.outputs["Vector"], env.inputs["Vector"])
+    nt.links.new(env.outputs["Color"], bg.inputs["Color"])
+    bg.inputs["Strength"].default_value = HDRI_STRENGTH
+    print(f"HDRI utilisée : {files[0]}")
+    return True
+
+
 # Encadrement de porte façon référence : la borne est posée dans l'ouverture d'une
 # grande porte double, sur un seuil surélevé ; la pièce derrière reste dans le noir.
 WALL_Y = -OUT_D / 2 - 0.24          # face avant de la façade
@@ -833,11 +974,14 @@ def build_door(name, hinge_x, sgn, M, coll):
 
 def build_entrance(M):
     coll = new_collection("Entrance")
-    facade = wood_mat("FacadeWalnut", (0.08, 0.045, 0.028), (0.13, 0.075, 0.045), 0.4, (1.5, 1.5, 12.0), 0.4)
-    trim = wood_mat("FacadeTrim", (0.09, 0.05, 0.03), (0.15, 0.085, 0.05), 0.32, (1.5, 1.5, 12.0), 0.5)
-    M['door_paint'] = new_mat("DoorPaint", (0.62, 0.6, 0.55), 0.45, Coat_Weight=0.15)
-    add_rough_variation(M['door_paint'], 0.25, 0.5, 5.0)
-    add_bump(M['door_paint'], 700, 0.02)
+    facade = pbr_mat("facade", wood_mat("FacadeWalnut", (0.08, 0.045, 0.028), (0.13, 0.075, 0.045), 0.4,
+                                        (1.5, 1.5, 12.0), 0.4))
+    trim = facade if facade.name.startswith("PBR_") else wood_mat(
+        "FacadeTrim", (0.09, 0.05, 0.03), (0.15, 0.085, 0.05), 0.32, (1.5, 1.5, 12.0), 0.5)
+    door = new_mat("DoorPaint", (0.62, 0.6, 0.55), 0.45, Coat_Weight=0.15)
+    add_rough_variation(door, 0.25, 0.5, 5.0)
+    add_bump(door, 700, 0.02)
+    M['door_paint'] = pbr_mat("door", door)
     dark = new_mat("InteriorDark", (0.03, 0.025, 0.02), 0.6)
 
     yc = WALL_Y + WALL_T / 2
@@ -865,12 +1009,12 @@ def build_entrance(M):
     # Seuil surélevé + sol du hall
     box("Threshold", (OPEN_W + 1.2, STEP_D, STEP_H), (0, WALL_Y - STEP_D / 2, FLOOR_Z - STEP_H / 2),
         mat=new_mat("ThresholdStone", (0.05, 0.045, 0.04), 0.35, Coat_Weight=0.2), bevel=0.01, coll=coll)
-    lobby = box("LobbyFloor", (12, 14, 0.02), (0, WALL_Y - 7, FLOOR_Z - STEP_H - 0.01), mat=stone_tiles_mat(),
+    lobby = box("LobbyFloor", (12, 14, 0.02), (0, WALL_Y - 7, FLOOR_Z - STEP_H - 0.01), mat=pbr_mat("lobby_floor", stone_tiles_mat()),
                 coll=coll)
     lobby.name = "LobbyFloor"
 
     # Pièce sombre derrière
-    box("InteriorFloor", (OPEN_W + 2, 3, 0.02), (0, WALL_Y + 1.5, FLOOR_Z - 0.01), mat=parquet_mat(), coll=coll)
+    box("InteriorFloor", (OPEN_W + 2, 3, 0.02), (0, WALL_Y + 1.5, FLOOR_Z - 0.01), mat=pbr_mat("interior_floor", parquet_mat()), coll=coll)
     box("InteriorBack", (6, 0.05, 4), (0, 2.6, FLOOR_Z + 2), mat=dark, coll=coll)
     box("InteriorCeiling", (6, 4, 0.05), (0, 0.8, FLOOR_Z + OPEN_H + 0.3), mat=dark, coll=coll)
     for sx in (-1, 1):
@@ -886,7 +1030,7 @@ def build_entrance(M):
                                      (sx * (OPEN_W / 2 - 0.5), WALL_Y - 0.01, FLOOR_Z + OPEN_H + 0.04)],
                   0.006, mat=M['chrome_dark'], kind='POLY', coll=coll)
 
-    build_carpet(carpet_mat(), coll)
+    build_carpet(pbr_mat("carpet", carpet_mat()), coll)
     return coll
 
 
@@ -1316,6 +1460,7 @@ def build_lighting(M):
     bg = world.node_tree.nodes["Background"]
     bg.inputs["Color"].default_value = (0.75, 0.8, 0.9, 1.0)
     bg.inputs["Strength"].default_value = 0.05
+    hdri_world(world)
     bpy.context.scene.world = world
 
 

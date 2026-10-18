@@ -1,0 +1,19 @@
+TEXTURES PHOTO (PBR) — à télécharger sur https://polyhaven.com/textures
+=======================================================================
+
+Pour chaque dossier ci-dessous, télécharge UNE texture en 2K (format JPG ou PNG ;
+coche au moins Diffuse, Rough, nor_gl et Displacement, ou prends le zip complet),
+puis dépose les images directement dans le dossier. Relance ensuite claw_machine.py.
+
+  carpet/          tapis rouge      -> chercher "carpet", "fabric", "velvet" ou "wool".
+                                       Si la texture n'est pas rouge, mets une teinte dans
+                                       PBR_SLOTS["carpet"] (ex. (0.8, 0.08, 0.08)).
+  facade/          façade sombre    -> chercher "wood" (bois foncé, planches, lambris).
+  door/            portes blanches  -> chercher "painted wood", "white painted" ou "plaster".
+  lobby_floor/     sol du hall      -> chercher "concrete", "stone floor" ou "marble tiles".
+  interior_floor/  sol de la pièce  -> chercher "wood floor" ou "parquet".
+
+Les fichiers sont reconnus à leur nom (…_diff_2k.jpg, …_rough_2k.jpg, …_nor_gl_2k.png,
+…_disp_2k.png, …_arm_2k.jpg). Un dossier vide = matériau procédural d'origine.
+La taille d'une répétition (en mètres) se règle dans PBR_SLOTS en haut de la section
+« TEXTURES PHOTO » du script.

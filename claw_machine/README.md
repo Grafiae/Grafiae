@@ -10,6 +10,7 @@ de cadeaux de Noël et en ressort le chèque-cadeau **Le Renard – Hotel & Spa*
 | --- | --- |
 | `claw_machine.py` | Script qui construit toute la scène (modèles, matériaux, physique, lumières, caméra, animation) |
 | `claw_machine.blend` | Scène déjà générée, textures incluses (enregistrée avec Blender 5.2) |
+| `textures/pbr/`, `textures/hdri/` | Emplacements pour les textures photo et l'HDRI (voir plus bas) |
 | `textures/cheque_recto.png` | Recto du chèque-cadeau (face visible caméra) |
 | `textures/cheque_verso.png` | Verso du chèque-cadeau |
 | `preview/` | Rendus d'aperçu (plan large, plan serré, GIF basse résolution) |
@@ -61,6 +62,30 @@ blender -b claw_machine.blend -a       # rend l'animation dans ./render/
 | 106 → 150 | Remontée avec le chèque-cadeau, balancement pendulaire |
 | 150 → 192 | Tenue finale en plan serré |
 
+## Rendu photoréaliste : textures photo + HDRI
+
+Sans rien télécharger, la scène utilise des matériaux 100 % procéduraux. Pour un rendu qui
+ressemble vraiment à une photo, ajoute de vraies textures photo et une HDRI depuis
+[polyhaven.com](https://polyhaven.com) (gratuit, licence CC0) :
+
+| Dossier | Contenu | Recherche conseillée sur Poly Haven |
+| --- | --- | --- |
+| `textures/pbr/carpet/` | tapis rouge | « carpet », « fabric », « velvet », « wool » |
+| `textures/pbr/facade/` | façade sombre | « wood » (bois foncé, planches, lambris) |
+| `textures/pbr/door/` | portes blanches | « painted wood », « plaster » |
+| `textures/pbr/lobby_floor/` | sol du hall | « concrete », « stone floor », « marble tiles » |
+| `textures/pbr/interior_floor/` | sol de la pièce | « wood floor », « parquet » |
+| `textures/hdri/` | environnement | une HDRI d'intérieur (.hdr / .exr) |
+
+1. Pour chaque texture, télécharge la version **2K** (JPG ou PNG) avec au moins les cartes
+   *Diffuse*, *Rough*, *nor_gl* et *Displacement*, et dépose les images dans le dossier.
+2. Relance `claw_machine.py` : la console affiche « Textures photo utilisées pour … ».
+3. Les réglages sont en haut de la section « TEXTURES PHOTO » du script : `PBR_SLOTS`
+   (taille d'une répétition en mètres, teinte, relief) et `HDRI_STRENGTH`, `HDRI_ROTATION`.
+   Si ta texture de tapis n'est pas rouge, mets par exemple `(0.8, 0.08, 0.08)` comme teinte.
+
+Pour le rendu final, monte `SAMPLES` à 512 et rends sur carte graphique (`USE_GPU`).
+
 ## Réglages rapides (en haut du script)
 
 - `MACHINE_GREEN`, `NEON_COLOR`, `NEON_STRENGTH` : couleur de la laque et des néons
@@ -70,7 +95,7 @@ blender -b claw_machine.blend -a       # rend l'animation dans ./render/
 - `SEED` : autre disposition et répartition des cadeaux
 - `N_GIFTS`, `N_BALLS`, `N_JARS`, `N_CANES` : quantité d'objets
 - `FAIRY_LIGHTS`, `FRONT_GLASS` : guirlandes et vitre avant
-- `SAMPLES`, `RES_X`, `RES_Y`, `USE_GPU` : qualité et format (4:5 par défaut)
+- `SAMPLES`, `RES_X`, `RES_Y`, `USE_GPU` : qualité et format (3:4 par défaut)
 - `CARD_XY`, `CARD_SIZE`, `CARD_CORNER` : position, format et arrondi du chèque-cadeau
 
 Pour changer de visuel, remplace simplement `textures/cheque_recto.png` et `cheque_verso.png`
