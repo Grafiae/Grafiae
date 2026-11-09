@@ -12,6 +12,8 @@ Cinq pistes graphiques, une présentation PDF et deux maquettes (Facebook, broch
 | `svg/` | Logos vectoriels, **texte converti en courbes**. 3 variantes par piste : `couleur`, `negatif` (avec fond vert), `negatif-transparent`, `mono` (noir) |
 | `png/` | Mêmes fichiers, fond transparent, 2400 px |
 | `mockups/` | `facebook_page.png`, `brochure.png` |
+| `tests/` | **40 tests de logos** : les 10 pistes × 4 palettes (9 palettes en tout), SVG avec fond, nommés `pisteNN_nom_palette.svg` |
+| `CCE_tests_40_logos.pdf`, `CCE_tests_40_logos_planche.png` | PDF des tests (palettes, une page par piste, vue d’ensemble) et planche des 40 variantes. Aucune maquette |
 | `src/` | Scripts Python/Node qui génèrent tout (pour régénérer après modification) |
 
 ## Les 5 pistes
