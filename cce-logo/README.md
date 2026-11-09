@@ -14,6 +14,8 @@ Cinq pistes graphiques, une présentation PDF et deux maquettes (Facebook, broch
 | `mockups/` | `facebook_page.png`, `brochure.png` |
 | `tests/` | **40 tests de logos** : les 10 pistes × 4 palettes (9 palettes en tout), SVG avec fond, nommés `pisteNN_nom_palette.svg` |
 | `CCE_tests_40_logos.pdf`, `CCE_tests_40_logos_planche.png` | PDF des tests (palettes, une page par piste, vue d’ensemble) et planche des 40 variantes. Aucune maquette |
+| `tests3/` | **Série 3, d’après le tableau Pinterest** : 6 pistes (11 à 16) × 5 palettes = 30 variantes SVG |
+| `CCE_presentation_serie3_pinterest.pdf`, `CCE_serie3_30_variantes_planche.png` | PDF (lecture du tableau, « inspiré sans copier », une page par piste) et planche des 30 variantes |
 | `src/` | Scripts Python/Node qui génèrent tout (pour régénérer après modification) |
 
 ## Les 5 pistes
@@ -33,6 +35,17 @@ Cinq pistes graphiques, une présentation PDF et deux maquettes (Facebook, broch
 10. **L’Éclat** : coupe d’où jaillissent des rayons terminés en bulles, CCE dans la coupe
 
 Même arborescence : `svg/pisteNN_nom_{couleur,negatif,negatif-transparent,mono}.svg` et `png/`.
+
+## Série 3 : d’après votre tableau Pinterest (pistes 11 à 16)
+
+11. **Le Trait** : coupe d’un seul trait dont le pied devient le filet sous le nom
+12. **L’Arche pleine** : arche pleine de Châlons avec coupe, bulles et sigle en réserve
+13. **Santé** : deux coupes qui trinquent, éclat de bulles, CCE entre les pieds
+14. **Le Cartouche** : cartouche dont la bordure est faite de bulles
+15. **La Rosace** : symbole entièrement en bulles + nom en capitales géométriques
+16. **Les Gigognes** : C dans C dans E, bulles qui s’échappent
+
+Les images du tableau ne sont pas copiées dans ce dossier. Une recherche d’antériorités (INPI, image inversée) reste à faire avant de choisir.
 
 ## Ce qui n’est pas fait, à lire avant d’ouvrir
 
