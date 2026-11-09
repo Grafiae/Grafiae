@@ -23,3 +23,9 @@ for ck, c in COLORS.items():
     body, W, H = d5_arcade(c, tagline=False)
     write(f"piste05_arcade_symbole_{ck}", body, W, H, ck, f"CCE – Arcade symbole seul ({ck})")
 print(sorted(os.listdir(OUT)))
+
+from designs2 import PISTES2
+for num, slug, label, fn in PISTES2:
+    for ck, c in COLORS.items():
+        body, W, H = fn(c)
+        write(f"piste{num}_{slug}_{ck}", body, W, H, ck, f"CCE – Piste {num} {label} ({ck})")

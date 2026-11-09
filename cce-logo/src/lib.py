@@ -189,10 +189,10 @@ CRAIE = "#F4ECDB"    # craie / crème
 GOLD_STOPS = [(0, "#8B6420"), (0.28, "#D8B766"), (0.5, "#B08130"), (0.74, "#DDBF74"), (1, "#97712A")]
 
 COLORS = {
-    "couleur": dict(ink=INK, gold="url(#or)", bg=None, name="couleur"),
-    "negatif": dict(ink=CRAIE, gold="url(#or)", bg=INK, name="negatif"),
-    "negatif-transparent": dict(ink=CRAIE, gold="url(#or)", bg=None, name="negatif-transparent"),
-    "mono": dict(ink="#000000", gold="#000000", bg=None, name="mono"),
+    "couleur": dict(ink=INK, gold="url(#or)", bg=None, paper=CRAIE, name="couleur"),
+    "negatif": dict(ink=CRAIE, gold="url(#or)", bg=INK, paper=INK, name="negatif"),
+    "negatif-transparent": dict(ink=CRAIE, gold="url(#or)", bg=None, paper=INK, name="negatif-transparent"),
+    "mono": dict(ink="#000000", gold="#000000", bg=None, paper="#FFFFFF", name="mono"),
 }
 
 
