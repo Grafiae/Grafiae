@@ -2,6 +2,18 @@
 
 Cinq pistes graphiques, une présentation PDF et deux maquettes (Facebook, brochure).
 
+## Propositions client (dossier `client/`)
+
+Trois propositions poussées pour « Châlons Champagne Events · Tourisme d’affaires » (cible entreprises).
+
+- `client/CCE_3_propositions_client.pdf` : présentation de 14 pages, rédigée pour le client
+- `client/CCE_3_propositions_planche.png` : planche d’ensemble
+- `client/svg/` : 31 fichiers. Par proposition : horizontal, vertical, symbole × couleur, négatif, noir ; B et C existent aussi en bleu et or
+
+A. **Le Monogramme** (bleu nuit et or, les couleurs du client) · B. **Les Arches** (vert profond et laiton) · C. **Le Sceau** (anthracite et cuivre)
+
+Le reste du dossier est l’exploration préalable (séries 1 à 3), qui utilisait l’ancien nom « Châlons Champagnes Évents ».
+
 ## Contenu
 
 | Dossier / fichier | Rôle |
